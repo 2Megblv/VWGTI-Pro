@@ -1,0 +1,18 @@
+{
+  "mode": "yolo",
+  "granularity": "coarse",
+  "parallelization": true,
+  "commit_docs": true,
+  "model_profile": "balanced",
+  "workflow": {
+    "research": true,
+    "plan_check": true,
+    "verifier": true,
+    "nyquist_validation": false,
+    "auto_advance": false
+  },
+  "project_id": "VWGTI-PRO-VP-EA",
+  "created_at": "2026-05-13",
+  "branching_strategy": "feature",
+  "sub_repos": []
+}
