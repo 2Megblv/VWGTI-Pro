@@ -222,15 +222,13 @@ void OnDeinit(int reason)
 
 //+------------------------------------------------------------------+
 //| Calculate 400-bin volume distribution (REQ-001, REQ-008)         |
+//| Implementation per D-01: Proportional-to-range proration         |
 //+------------------------------------------------------------------+
 void CalculateCurrentVolumeProfile()
 {
-    // Implementation: Task 2
-    // Will be filled in Task 2 with proportional-to-range proration
-
     int lookbackPeriod = Lookback_Period;
 
-    // Find price range from lookback period
+    // Step 1: Find price range from lookback period
     double minPrice = iLowest(Symbol(), PERIOD_CURRENT, MODE_LOW, lookbackPeriod, 0);
     double maxPrice = iHighest(Symbol(), PERIOD_CURRENT, MODE_HIGH, lookbackPeriod, 0);
 
@@ -248,48 +246,257 @@ void CalculateCurrentVolumeProfile()
     currentProfile.maxPrice = maxPrice;
     currentProfile.binSize = binSize;
 
-    // Initialize volume array
+    // Step 2: Initialize volume array to zero
     ArrayInitialize(currentProfile.volumeArray, 0);
 
-    // TODO: Implement proration algorithm here (Task 2)
-    // For now, stub will be filled in Task 2
+    // Step 3: Iterate through lookback bars and prorate volume
+    for (int i = 0; i < lookbackPeriod; i++)
+    {
+        double high = iHigh(Symbol(), PERIOD_CURRENT, i);
+        double low = iLow(Symbol(), PERIOD_CURRENT, i);
+        double close = iClose(Symbol(), PERIOD_CURRENT, i);
+        long volume = iVolume(Symbol(), PERIOD_CURRENT, i);
+
+        if (volume <= 0)
+            continue;  // Skip bars with zero volume
+
+        double range = high - low;
+
+        // Multi-level candle: distribute volume proportionally across price range
+        if (range > binSize)
+        {
+            // Calculate how many bins this candle spans
+            int numBins = (int)(range / binSize) + 1;
+            if (numBins > VOLUME_BINS)
+                numBins = VOLUME_BINS;  // Safety cap
+
+            double volumePerBin = (double)volume / numBins;
+
+            // Iterate from low to high in bin steps
+            for (double price = low; price <= high && price <= maxPrice; price += binSize)
+            {
+                int binIdx = (int)((price - minPrice) / binSize);
+                if (binIdx >= 0 && binIdx < VOLUME_BINS)
+                {
+                    currentProfile.volumeArray[binIdx] += volumePerBin;
+                }
+            }
+        }
+        else
+        {
+            // Doji or flat candle: all volume goes to close price bin
+            int binIdx = (int)((close - minPrice) / binSize);
+            if (binIdx >= 0 && binIdx < VOLUME_BINS)
+            {
+                currentProfile.volumeArray[binIdx] += volume;
+            }
+        }
+    }
+
+    // Step 4: Validation - Check volume distribution integrity
+    double binSum = 0;
+    long rawTotal = 0;
+
+    for (int i = 0; i < lookbackPeriod; i++)
+        rawTotal += iVolume(Symbol(), PERIOD_CURRENT, i);
+
+    for (int i = 0; i < VOLUME_BINS; i++)
+        binSum += currentProfile.volumeArray[i];
+
+    if (rawTotal > 0)
+    {
+        double variance = MathAbs(binSum - rawTotal) / rawTotal;
+        if (variance > 0.01)  // >1% variance
+        {
+            LogAlert("WARNING", StringFormat("Volume distribution variance %.2f%% > 1%%, sum=%.0f, total=%d",
+                variance * 100, binSum, rawTotal));
+        }
+    }
 }
 
 //+------------------------------------------------------------------+
 //| Calculate POC and VAH/VAL boundaries (REQ-002, REQ-003, REQ-004) |
+//| POC = single price bin with max volume                            |
+//| VAH/VAL = 70% cumulative volume expanding from POC                |
 //+------------------------------------------------------------------+
 void CalculateValueArea()
 {
-    // Implementation: Task 3
-    // Will be filled in Task 3 with POC identification and 70% expansion
+    if (currentProfile.binSize <= 0)
+    {
+        LogError("Volume profile not calculated before VAH/VAL");
+        return;
+    }
 
-    // TODO: Implement POC identification here (Task 3)
-    // TODO: Implement VAH/VAL expansion here (Task 3)
+    // Step 1: Identify POC (Point of Control)
+    // POC = price bin with highest accumulated volume
+    double maxVol = 0;
+    int pocIdx = 0;
 
-    currentProfile.pocPrice = 0;
-    currentProfile.pocVolume = 0;
-    currentProfile.vahPrice = 0;
-    currentProfile.valPrice = 0;
+    for (int i = 0; i < VOLUME_BINS; i++)
+    {
+        if (currentProfile.volumeArray[i] > maxVol)
+        {
+            maxVol = currentProfile.volumeArray[i];
+            pocIdx = i;
+        }
+    }
+
+    // Convert bin index to price (use center of bin)
+    currentProfile.pocBinIndex = pocIdx;
+    currentProfile.pocPrice = currentProfile.minPrice +
+                              (pocIdx * currentProfile.binSize) +
+                              (currentProfile.binSize / 2.0);
+    currentProfile.pocVolume = maxVol;
+
+    // Step 2: Calculate VAH/VAL (70% Value Area expansion)
+    // Calculate total volume and target threshold
+    double totalVol = 0;
+    for (int i = 0; i < VOLUME_BINS; i++)
+    {
+        totalVol += currentProfile.volumeArray[i];
+    }
+
+    if (totalVol <= 0)
+    {
+        LogError("Total volume <= 0 for VAH/VAL calculation");
+        return;
+    }
+
+    double targetVol = totalVol * VALUE_AREA_PERCENT;  // 70% threshold
+
+    // Expand outward from POC until 70% cumulative volume reached
+    double cumulativeVol = currentProfile.volumeArray[currentProfile.pocBinIndex];
+    int offset = 0;
+    int maxOffset = 200;  // Safety: don't expand > 50% of bins
+
+    while (cumulativeVol < targetVol && offset < maxOffset)
+    {
+        offset++;
+
+        // Add bin above POC (higher price)
+        if (currentProfile.pocBinIndex + offset < VOLUME_BINS)
+        {
+            cumulativeVol += currentProfile.volumeArray[currentProfile.pocBinIndex + offset];
+        }
+
+        // Add bin below POC (lower price)
+        if (currentProfile.pocBinIndex - offset >= 0)
+        {
+            cumulativeVol += currentProfile.volumeArray[currentProfile.pocBinIndex - offset];
+        }
+    }
+
+    // Step 3: Calculate VAH and VAL prices
+    int vahBinIndex = currentProfile.pocBinIndex + offset;
+    int valBinIndex = currentProfile.pocBinIndex - offset;
+
+    // Clamp to valid range
+    if (vahBinIndex >= VOLUME_BINS)
+        vahBinIndex = VOLUME_BINS - 1;
+    if (valBinIndex < 0)
+        valBinIndex = 0;
+
+    currentProfile.vahPrice = currentProfile.minPrice +
+                              (vahBinIndex * currentProfile.binSize);
+    currentProfile.valPrice = currentProfile.minPrice +
+                              (valBinIndex * currentProfile.binSize);
+
+    // Step 4: Validation - Check Value Area width is reasonable
+    double vaWidth = currentProfile.vahPrice - currentProfile.valPrice;
+    if (vaWidth < currentProfile.binSize)
+    {
+        LogAlert("WARNING", StringFormat("VA width %.5f < bin size %.5f",
+            vaWidth, currentProfile.binSize));
+    }
 }
 
 //+------------------------------------------------------------------+
 //| Identify High/Low Volume Nodes (REQ-005, REQ-006)               |
+//| HVN = local peaks > 1.3x average volume (locked per D-02)       |
+//| LVN = local valleys < 0.7x average volume (locked per D-02)    |
 //+------------------------------------------------------------------+
 void IdentifyVolumeNodes()
 {
-    // Implementation: Task 4
-    // Will be filled in Task 4 with HVN/LVN detection logic
-
     if (currentProfile.pocPrice <= 0)
     {
         LogError("POC not calculated before node identification");
         return;
     }
 
-    // TODO: Implement HVN/LVN detection here (Task 4)
+    // Step 1: Calculate average volume per bin
+    double totalVol = 0;
+    for (int i = 0; i < VOLUME_BINS; i++)
+    {
+        totalVol += currentProfile.volumeArray[i];
+    }
 
+    if (totalVol <= 0)
+    {
+        LogError("Total volume <= 0 for node identification");
+        return;
+    }
+
+    double avgVolume = totalVol / VOLUME_BINS;
+
+    // Step 2: Calculate thresholds (locked, non-negotiable per D-02)
+    double hvnThreshold = avgVolume * HVN_MULTIPLIER;  // 1.3x
+    double lvnThreshold = avgVolume * LVN_MULTIPLIER;  // 0.7x
+
+    // Step 3: Reset arrays and counters
     currentProfile.hvnCount = 0;
     currentProfile.lvnCount = 0;
+    // Zero out HVN and LVN arrays
+    for (int j = 0; j < 50; j++)
+    {
+        currentProfile.hvnArray[j].price = 0;
+        currentProfile.hvnArray[j].volume = 0;
+        currentProfile.lvnArray[j].price = 0;
+        currentProfile.lvnArray[j].volume = 0;
+    }
+
+    // Step 4: Iterate and classify bins as HVN or LVN
+    for (int i = 0; i < VOLUME_BINS; i++)
+    {
+        double binVolume = currentProfile.volumeArray[i];
+        double binPrice = currentProfile.minPrice + (i * currentProfile.binSize);
+
+        // HVN: local peaks > 1.3x average
+        if (binVolume > hvnThreshold)
+        {
+            if (currentProfile.hvnCount < 50)  // Max 50 HVN clusters
+            {
+                currentProfile.hvnArray[currentProfile.hvnCount].price = binPrice;
+                currentProfile.hvnArray[currentProfile.hvnCount].volume = binVolume;
+                currentProfile.hvnCount++;
+            }
+        }
+
+        // LVN: local valleys < 0.7x average
+        if (binVolume < lvnThreshold)
+        {
+            if (currentProfile.lvnCount < 50)  // Max 50 LVN clusters
+            {
+                currentProfile.lvnArray[currentProfile.lvnCount].price = binPrice;
+                currentProfile.lvnArray[currentProfile.lvnCount].volume = binVolume;
+                currentProfile.lvnCount++;
+            }
+        }
+    }
+
+    // Step 5: Validation - sanity-check cluster counts
+    if (currentProfile.hvnCount > 50)
+    {
+        LogAlert("WARNING", StringFormat("HVN count %d exceeds max (50); truncated",
+            currentProfile.hvnCount));
+        currentProfile.hvnCount = 50;
+    }
+
+    if (currentProfile.lvnCount > 50)
+    {
+        LogAlert("WARNING", StringFormat("LVN count %d exceeds max (50); truncated",
+            currentProfile.lvnCount));
+        currentProfile.lvnCount = 50;
+    }
 }
 
 //+------------------------------------------------------------------+
