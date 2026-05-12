@@ -3,7 +3,7 @@
 **Project:** MT5 Volume Profile Swing Trading Expert Advisor  
 **Version:** 1.0 (Minimal Viable Product)  
 **Last Updated:** 2026-05-13  
-**Status:** Phase 1 Planning Complete
+**Status:** Phase 2 Planning Complete
 
 ---
 
@@ -12,7 +12,9 @@
 - [x] **Phase 1: Volume Profile Core** — Foundation volume profile engine + risk framework (XAUUSD/EURUSD ready to trade)
   - **Plans:** 01-01, 01-02, 01-03 (3 plans complete)
   - **Status:** Planning complete → Ready for execution
-- [ ] **Phase 2: Signal Detection & Execution** - Setup 1 & 2 entry logic + execution + partial TP + logging (trading fully operational)
+- [x] **Phase 2: Signal Detection & Execution** - Setup 1 & 2 entry logic + execution + single TP + logging (trading fully operational)
+  - **Plans:** 02-01, 02-02, 02-03, 02-04 (4 plans complete)
+  - **Status:** Planning complete → Ready for execution
 - [ ] **Phase 3: Backtesting & Validation** - 1-year backtest on both symbols; win rate/profit factor validation
 - [ ] **Phase 4: Live Deployment & Monitoring** - Live account validation; 30 days zero-error operation
 
@@ -35,13 +37,13 @@
   4. Daily profit cap (+5% account limit) closes ALL open positions when reached
   5. Position sizing formula (lot = [balance × 0.6%] / [SL distance × point value]) calculates correctly for $1K+ accounts
 
-**Plans:** 3 plans (105 KB total)
+**Plans:** 3 plans
 
-| Plan | Objective | Tasks | Files Modified |
-|------|-----------|-------|-----------------|
-| 01-01-PLAN.md | Volume Profile Calculation Engine | 5 tasks | src/VolumeProfile_EA_v1.0.mq5 |
-| 01-02-PLAN.md | Risk Management Framework | 5 tasks | src/VolumeProfile_EA_v1.0.mq5 |
-| 01-03-PLAN.md | Logging, Error Handling, Backtest Validation | 4 tasks | src/VolumeProfile_EA_v1.0.mq5 |
+| Plan | Objective | Tasks |
+|------|-----------|-------|
+| 01-01-PLAN.md | Volume Profile Calculation Engine | 5 tasks |
+| 01-02-PLAN.md | Risk Management Framework | 5 tasks |
+| 01-03-PLAN.md | Logging, Error Handling, Backtest Validation | 4 tasks |
 
 **Wave Structure:**
 - **Wave 1:** Plan 01-01 (Volume Profile Engine) — data structures, profile calculation, POC/VAH/VAL, HVN/LVN, unit tests
@@ -52,20 +54,34 @@
 
 ### Phase 2: Signal Detection & Execution
 
-**Goal:** Both entry setups execute trades end-to-end with proper exit management; trader sees orders placed at correct prices, partial TPs execute in correct sequence, and Journal logs all activity.
+**Goal:** Both entry setups execute trades end-to-end with proper exit management; trader sees orders placed at correct prices, single TP targets opposite profile edge, and Journal logs all activity.
 
 **Depends on:** Phase 1 (requires volume profile + risk framework working)
 
-**Requirements:** REQ-011 through REQ-028 (Setup 1 & 2 detection, entry/exit logic, partial TP), REQ-038 through REQ-042 (Logging, execution monitoring)
+**Requirements:** REQ-011–028 (Setup 1 & 2 detection, entry/exit logic, TP), REQ-038–042 (Logging, execution monitoring)
 
 **Success Criteria** (what must be TRUE when this phase completes):
   1. Setup 1 (balanced market detection + confirmation candle closure inside VA) triggers entries on reclaims into Value Area
   2. Setup 2 (LVN sweep + HVN edge identification + trigger candle pattern + 1.3x volume spike) triggers entries at HVN cluster edges
-  3. Partial TP structure executes (65% at first resistance, 35% at Value Area opposite extreme); position state tracked until both TPs hit or SL triggered
-  4. Journal logs all trades: entry time/price/size, setup type (Setup 1 or 2), exit time/reason, realized P&L
+  3. Single unified TP structure executes (opposite profile edge: VAH for LONG, VAL for SHORT); position state tracked until TP or SL triggered
+  4. Journal logs all trades: entry time/price/size, setup type (Setup 1 or 2), exit time/reason, realized P&L, slippage
   5. Order fills validated for slippage; trades rejected if fill price >50 pips from order price
+  6. Daily hard stop (-2%) and profit cap (+5%) enforced; Friday 21:45 hard close executes
 
-**Plans:** TBD (pending Phase 1 completion)
+**Plans:** 4 plans
+
+| Plan | Objective | Tasks | Wave |
+|------|-----------|-------|------|
+| 02-01-PLAN.md | Phase 1 Refactoring into Modular Headers | 5 tasks | 0 |
+| 02-02-PLAN.md | Signal Detection (Setup 1 & 2) and Market Context Switching | 5 tasks | 1 |
+| 02-03-PLAN.md | Order Placement, Slippage Validation, and Position State Tracking | 5 tasks | 2 |
+| 02-04-PLAN.md | Daily Risk Limits, Journal Logging, and Audit Trail | 6 tasks | 3 |
+
+**Wave Structure:**
+- **Wave 0:** Plan 02-01 (Refactor Phase 1 into modules) — VolumeProfile.mqh, RiskManager.mqh, Utils.mqh, verification
+- **Wave 1:** Plan 02-02 (Signal Detection) — IsBalancedMarket(), DetectSetup1Signal(), DetectSetup2Signal(), TP/SL calculation (depends on Wave 0)
+- **Wave 2:** Plan 02-03 (Order Execution) — CTrade order placement, slippage validation, position state tracking (depends on Wave 1)
+- **Wave 3:** Plan 02-04 (Risk Control & Logging) — Daily limits, Friday close, journal logging, error handling (depends on Wave 2)
 
 ---
 
@@ -112,7 +128,7 @@
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Volume Profile Core | 3/3 ✅ | Planning complete | 2026-05-13 |
-| 2. Signal Detection & Execution | 0/8 | Not started | — |
+| 2. Signal Detection & Execution | 4/4 ✅ | Planning complete | 2026-05-13 |
 | 3. Backtesting & Validation | 0/5 | Not started | — |
 | 4. Live Deployment & Monitoring | 0/5 | Not started | — |
 
@@ -140,9 +156,10 @@ Phase 1 (3-4 weeks) [PLANNING COMPLETE 2026-05-13]
   ├─ 3 plans (01-01, 01-02, 01-03) ready for execution
   └─ Unblocks: Phase 2
   
-Phase 2 (2-3 weeks)
-  ├─ Deliverable: Entry/exit logic + full trade execution
-  ├─ Gate: Integration tests pass (order flow end-to-end)
+Phase 2 (2-3 weeks) [PLANNING COMPLETE 2026-05-13]
+  ├─ Deliverable: Entry/exit logic + full trade execution + audit logging
+  ├─ Gate: Integration tests pass (order flow end-to-end, daily limits enforced)
+  ├─ 4 plans (02-01, 02-02, 02-03, 02-04) ready for execution
   └─ Unblocks: Phase 3
   
 Phase 3 (2 weeks)
@@ -162,17 +179,15 @@ Total: 10-11 weeks (5-6 weeks minimum with no rework)
 
 ## Architecture Alignment
 
-Build sequence (from ARCHITECTURE.md):
+Phase 2 implements items 3-7 from the build sequence:
 
 1. **Data Structures** (Phase 1 - 01-01): Arrays, structs for profiles/signals/positions ✅
 2. **Volume Profile Engine** (Phase 1 - 01-01): 400-bin, POC/VAH/VAL, HVN/LVN detection ✅
-3. **Signal Detection** (Phase 2): Setup 1 & 2 logic (pending)
-4. **Trade Execution** (Phase 2): CTrade order placement, magic #, partial TP (pending)
-5. **Risk Management** (Phase 1 - 01-02): Position sizing, daily limits, SL/TP placement ✅
-6. **Error Handling** (Phase 1 - 01-03): Connectivity checks, slippage tolerance, logging ✅
-7. **Main Event Loop** (Phase 2): OnTick orchestration, zero-lag bar-close trigger (pending)
-
-Each phase delivers logically cohesive, unit-testable components that gate into the next phase.
+3. **Signal Detection** (Phase 2 - 02-02): Setup 1 & 2 logic with balanced/imbalanced market context ✅
+4. **Trade Execution** (Phase 2 - 02-03): CTrade order placement, slippage validation, position tracking ✅
+5. **Risk Management** (Phase 1 - 01-02 + Phase 2 - 02-04): Position sizing, daily limits, SL/TP placement ✅
+6. **Error Handling** (Phase 2 - 02-04): Order rejection logging, retry logic, connectivity checks ✅
+7. **Main Event Loop** (Phase 2 - 02-04): OnTick orchestration with signal detection → order placement → exit monitoring ✅
 
 ---
 
@@ -180,9 +195,9 @@ Each phase delivers logically cohesive, unit-testable components that gate into 
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0 | 2026-05-13 | Initial roadmap; 4 phases, 42 requirements, 10-11 week timeline; Phase 1 planning complete (3 plans created) |
+| 1.0 | 2026-05-13 | Phase 1 & Phase 2 planning complete; 7 plans total ready for execution (4 Phase 2 plans: refactoring, signal detection, order execution, risk control & logging) |
 
 ---
 
-*Roadmap created: 2026-05-13*  
-*Status: Phase 1 ready for execution*
+*Roadmap updated: 2026-05-13*  
+*Status: Phase 2 Planning Complete — Ready for Phase 1 Execution*
