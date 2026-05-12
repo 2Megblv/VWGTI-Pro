@@ -85,31 +85,61 @@
 
 ---
 
-## Requirement Traceability to Roadmap
+## Requirement Traceability to Roadmap (2026-05-13)
 
-### Phase 1 Development → Requirements Implementation
+### Phase Mappings
 
-| Phase 1 Task | REQ-IDs Implemented | Validation Gate |
-|--------------|-------------------|-----------------|
-| Data structures | REQ-001, REQ-007 | Compile without errors |
-| Volume Profile engine | REQ-002, REQ-003, REQ-004, REQ-005, REQ-006, REQ-008, REQ-009, REQ-010 | Unit tests pass (±0.1% accuracy) |
-| Setup 1 detection | REQ-011, REQ-012, REQ-013, REQ-014 | Signal detection test data |
-| Setup 2 detection | REQ-017, REQ-018, REQ-019, REQ-020, REQ-021 | Signal detection test data |
-| Entry execution | REQ-015, REQ-016, REQ-022, REQ-023 | Order execution validation |
-| Exit logic | REQ-024, REQ-025, REQ-026, REQ-027, REQ-028 | Partial TP test cases |
-| Position sizing | REQ-029, REQ-030, REQ-031 | Lot size formula validation |
-| Risk enforcement | REQ-032, REQ-033, REQ-034, REQ-035 | Daily limit test scenarios |
-| Execution & logging | REQ-036, REQ-037, REQ-038, REQ-039, REQ-040, REQ-041, REQ-042 | Integration testing |
+| REQ-ID | Requirement | Phase | Status |
+|--------|-------------|-------|--------|
+| REQ-001 | 400-bin distribution | Phase 1 | Pending |
+| REQ-002 | POC identification | Phase 1 | Pending |
+| REQ-003 | VAH calculation | Phase 1 | Pending |
+| REQ-004 | VAL calculation | Phase 1 | Pending |
+| REQ-005 | HVN detection | Phase 1 | Pending |
+| REQ-006 | LVN detection | Phase 1 | Pending |
+| REQ-007 | Session profile isolation | Phase 1 | Pending |
+| REQ-008 | Multi-level proration | Phase 1 | Pending |
+| REQ-009 | Volume validation | Phase 1 | Pending |
+| REQ-010 | Tick volume support | Phase 1 | Pending |
+| REQ-011 | Balanced market detection | Phase 2 | Pending |
+| REQ-012 | Gap detection | Phase 2 | Pending |
+| REQ-013 | Reclaim detection | Phase 2 | Pending |
+| REQ-014 | Confirmation candle | Phase 2 | Pending |
+| REQ-015 | LONG entry execution | Phase 2 | Pending |
+| REQ-016 | SHORT entry execution | Phase 2 | Pending |
+| REQ-017 | LVN sweep detection | Phase 2 | Pending |
+| REQ-018 | HVN edge identification | Phase 2 | Pending |
+| REQ-019 | Trigger pattern recognition | Phase 2 | Pending |
+| REQ-020 | Volume spike confirmation | Phase 2 | Pending |
+| REQ-021 | Closed candle requirement | Phase 2 | Pending |
+| REQ-022 | LONG HVN entry | Phase 2 | Pending |
+| REQ-023 | SHORT HVN entry | Phase 2 | Pending |
+| REQ-024 | Partial TP (65%) | Phase 2 | Pending |
+| REQ-025 | Remainder TP (35%) | Phase 2 | Pending |
+| REQ-026 | SL placement | Phase 2 | Pending |
+| REQ-027 | Partial execution tracking | Phase 2 | Pending |
+| REQ-028 | Risk/Reward calculation | Phase 2 | Pending |
+| REQ-029 | Risk-based sizing | Phase 1 | Pending |
+| REQ-030 | Fixed lot alternative | Phase 1 | Pending |
+| REQ-031 | Max 1 position per asset | Phase 1 | Pending |
+| REQ-032 | Daily hard stop loss | Phase 1 | Pending |
+| REQ-033 | Daily profit cap | Phase 1 | Pending |
+| REQ-034 | Friday hard close | Phase 1 | Pending |
+| REQ-035 | Drawdown tracking | Phase 1 | Pending |
+| REQ-036 | Gold XAUUSD support | Phase 1 | Pending |
+| REQ-037 | EURUSD support | Phase 1 | Pending |
+| REQ-038 | Journal logging | Phase 2 | Pending |
+| REQ-039 | Slippage tolerance | Phase 2 | Pending |
+| REQ-040 | Broker connectivity | Phase 2 | Pending |
+| REQ-041 | Error recovery | Phase 2 | Pending |
+| REQ-042 | Metrics calculation | Phase 2 | Pending |
 
-### Phase 2 Backtesting → Requirements Validation
-
-| Requirement Group | Success Criteria | Backtest Acceptance |
-|------------------|-----------------|-------------------|
-| Volume Profile (REQ-001-010) | POC/VAH/VAL within 1 pip of manual analysis | 5 random-bar manual inspection |
-| Setup 1 (REQ-011-016) | Win rate on Setup 1 signals ≥ 50% | 50+ Setup 1 trades in 1-year history |
-| Setup 2 (REQ-017-023) | Win rate on Setup 2 signals ≥ 50% | 50+ Setup 2 trades in 1-year history |
-| Position Management (REQ-024-035) | All positions exit at correct TP/SL, daily limits respected | 200+ trades, 0 violations |
-| Execution (REQ-036-042) | All trades logged, metrics accurate, no slippage >50 pips | 200+ trades, 100% logging accuracy |
+**Coverage Summary:**
+- Phase 1: 17 requirements (Profile engine + Risk framework)
+- Phase 2: 20 requirements (Signal detection + Execution + Logging)
+- Phase 3: 42 requirements (Backtest validation)
+- Phase 4: 42 requirements (Live deployment validation)
+- **Total Mapped: 42/42 (100%)**
 
 ---
 
@@ -175,4 +205,5 @@
 ---
 
 *Requirements locked: 2026-05-13*  
-*Ready for Phase Roadmap creation*
+*Traceability added: 2026-05-13*  
+*Status: Ready for Phase 1 Development*

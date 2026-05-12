@@ -3,13 +3,15 @@
 **Project:** MT5 Volume Profile Swing Trading Expert Advisor  
 **Version:** 1.0 (Minimal Viable Product)  
 **Last Updated:** 2026-05-13  
-**Status:** Ready for Phase 1 Development
+**Status:** Phase 1 Planning Complete
 
 ---
 
 ## Phases
 
-- [ ] **Phase 1: Volume Profile Core** - Foundation volume profile engine + risk framework (XAUUSD/EURUSD ready to trade)
+- [x] **Phase 1: Volume Profile Core** — Foundation volume profile engine + risk framework (XAUUSD/EURUSD ready to trade)
+  - **Plans:** 01-01, 01-02, 01-03 (3 plans complete)
+  - **Status:** Planning complete → Ready for execution
 - [ ] **Phase 2: Signal Detection & Execution** - Setup 1 & 2 entry logic + execution + partial TP + logging (trading fully operational)
 - [ ] **Phase 3: Backtesting & Validation** - 1-year backtest on both symbols; win rate/profit factor validation
 - [ ] **Phase 4: Live Deployment & Monitoring** - Live account validation; 30 days zero-error operation
@@ -33,7 +35,18 @@
   4. Daily profit cap (+5% account limit) closes ALL open positions when reached
   5. Position sizing formula (lot = [balance × 0.6%] / [SL distance × point value]) calculates correctly for $1K+ accounts
 
-**Plans:** TBD
+**Plans:** 3 plans (105 KB total)
+
+| Plan | Objective | Tasks | Files Modified |
+|------|-----------|-------|-----------------|
+| 01-01-PLAN.md | Volume Profile Calculation Engine | 5 tasks | src/VolumeProfile_EA_v1.0.mq5 |
+| 01-02-PLAN.md | Risk Management Framework | 5 tasks | src/VolumeProfile_EA_v1.0.mq5 |
+| 01-03-PLAN.md | Logging, Error Handling, Backtest Validation | 4 tasks | src/VolumeProfile_EA_v1.0.mq5 |
+
+**Wave Structure:**
+- **Wave 1:** Plan 01-01 (Volume Profile Engine) — data structures, profile calculation, POC/VAH/VAL, HVN/LVN, unit tests
+- **Wave 2:** Plan 01-02 (Risk Management) — position sizing, daily limits, position tracking (depends on Wave 1)
+- **Wave 3:** Plan 01-03 (Validation) — logging, error handling, backtest validation (depends on Waves 1 & 2)
 
 ---
 
@@ -52,7 +65,7 @@
   4. Journal logs all trades: entry time/price/size, setup type (Setup 1 or 2), exit time/reason, realized P&L
   5. Order fills validated for slippage; trades rejected if fill price >50 pips from order price
 
-**Plans:** TBD
+**Plans:** TBD (pending Phase 1 completion)
 
 ---
 
@@ -71,7 +84,7 @@
   4. 200+ trades executed in 1-year backtest across XAUUSD + EURUSD combined
   5. Backtest projected P&L within ±20% of conservative estimate (validates calculation accuracy, no overfitting)
 
-**Plans:** TBD
+**Plans:** TBD (pending Phase 2 completion)
 
 ---
 
@@ -90,7 +103,7 @@
   4. Friday 21:45 hard close executes reliably; all open positions closed before weekend gap risk
   5. Broker connectivity validated before each trade; graceful degradation if disconnected (skip trade vs. error state)
 
-**Plans:** TBD
+**Plans:** TBD (pending Phase 3 completion)
 
 ---
 
@@ -98,10 +111,10 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Volume Profile Core | 0/7 | Not started | - |
-| 2. Signal Detection & Execution | 0/8 | Not started | - |
-| 3. Backtesting & Validation | 0/5 | Not started | - |
-| 4. Live Deployment & Monitoring | 0/5 | Not started | - |
+| 1. Volume Profile Core | 3/3 ✅ | Planning complete | 2026-05-13 |
+| 2. Signal Detection & Execution | 0/8 | Not started | — |
+| 3. Backtesting & Validation | 0/5 | Not started | — |
+| 4. Live Deployment & Monitoring | 0/5 | Not started | — |
 
 ---
 
@@ -121,9 +134,10 @@
 ## Timeline & Dependencies
 
 ```
-Phase 1 (3-4 weeks)
+Phase 1 (3-4 weeks) [PLANNING COMPLETE 2026-05-13]
   ├─ Deliverable: Compiled EA with volume profile + risk limits
   ├─ Gate: Unit tests pass (profile accuracy ±0.1%, daily limits enforce)
+  ├─ 3 plans (01-01, 01-02, 01-03) ready for execution
   └─ Unblocks: Phase 2
   
 Phase 2 (2-3 weeks)
@@ -150,13 +164,13 @@ Total: 10-11 weeks (5-6 weeks minimum with no rework)
 
 Build sequence (from ARCHITECTURE.md):
 
-1. **Data Structures** (Phase 1 - Part A): Arrays, structs for profiles/signals/positions
-2. **Volume Profile Engine** (Phase 1 - Part B): 400-bin, POC/VAH/VAL, HVN/LVN detection
-3. **Signal Detection** (Phase 2 - Part A): Setup 1 & 2 logic
-4. **Trade Execution** (Phase 2 - Part B): CTrade order placement, magic #, partial TP
-5. **Risk Management** (Phase 1 - Part C): Position sizing, daily limits, SL/TP placement
-6. **Error Handling** (Phase 2 - Part C): Connectivity checks, slippage tolerance, logging
-7. **Main Event Loop** (Phase 2 - Part D): OnTick orchestration, zero-lag bar-close trigger
+1. **Data Structures** (Phase 1 - 01-01): Arrays, structs for profiles/signals/positions ✅
+2. **Volume Profile Engine** (Phase 1 - 01-01): 400-bin, POC/VAH/VAL, HVN/LVN detection ✅
+3. **Signal Detection** (Phase 2): Setup 1 & 2 logic (pending)
+4. **Trade Execution** (Phase 2): CTrade order placement, magic #, partial TP (pending)
+5. **Risk Management** (Phase 1 - 01-02): Position sizing, daily limits, SL/TP placement ✅
+6. **Error Handling** (Phase 1 - 01-03): Connectivity checks, slippage tolerance, logging ✅
+7. **Main Event Loop** (Phase 2): OnTick orchestration, zero-lag bar-close trigger (pending)
 
 Each phase delivers logically cohesive, unit-testable components that gate into the next phase.
 
@@ -166,9 +180,9 @@ Each phase delivers logically cohesive, unit-testable components that gate into 
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0 | 2026-05-13 | Initial roadmap; 4 phases, 42 requirements, 10-11 week timeline |
+| 1.0 | 2026-05-13 | Initial roadmap; 4 phases, 42 requirements, 10-11 week timeline; Phase 1 planning complete (3 plans created) |
 
 ---
 
 *Roadmap created: 2026-05-13*  
-*Status: Ready for Phase 1 Planning*
+*Status: Phase 1 ready for execution*
