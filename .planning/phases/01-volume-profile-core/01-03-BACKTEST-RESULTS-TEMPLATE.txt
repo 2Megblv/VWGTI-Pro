@@ -1,0 +1,108 @@
+Backtest Validation Complete
+=============================
+
+Backtest Period: [USER: ENTER DATE RANGE, e.g., 2026-04-13 to 2026-05-13]
+Symbol: XAUUSD
+Timeframe: M5
+Duration: 1 month
+EA Version: VolumeProfile_EA_v1.0.mq5
+MT5 Build: 4000+
+
+Check Results:
+==============
+
+Check 1 (POC/VAH/VAL Accuracy):
+- Status: [USER: ENTER PASS or FAIL]
+- Bars tested: [USER: ENTER 10 bar timestamps]
+- POC accuracy: [USER: ENTER e.g., "10/10 within ±1 pip"]
+- VAH accuracy: [USER: ENTER e.g., "10/10 within ±1-2 pips"]
+- VAL accuracy: [USER: ENTER e.g., "10/10 within ±1-2 pips"]
+- Notes: [USER: OPTIONAL - any deviations or observations]
+
+Check 2 (Session Profile Isolation):
+- Status: [USER: ENTER PASS or FAIL or N/A]
+- Days tested: [USER: ENTER 5 day boundaries]
+- Session separation verified: [USER: YES or NO]
+- Notes: [USER: OPTIONAL]
+
+Check 3 (HVN/LVN Realism):
+- Status: [USER: ENTER PASS or FAIL or N/A]
+- Average HVN/day: [USER: ENTER number]
+- Average LVN/day: [USER: ENTER number]
+- Top 3 HVN levels align with chart: [USER: YES or NO]
+- Notes: [USER: OPTIONAL]
+
+Check 4 (Volume Distribution Variance):
+- Status: [USER: ENTER PASS or FAIL]
+- Average variance: [USER: ENTER e.g., "0.05%"]
+- Max variance: [USER: ENTER e.g., "0.2%"]
+- Min variance: [USER: ENTER e.g., "0.01%"]
+- Variance >1% count: [USER: ENTER "0" expected]
+- Notes: [USER: OPTIONAL]
+
+Check 5A (Daily Hard Stop -2%):
+- Status: [USER: ENTER PASS or FAIL or N/A]
+- Triggered on dates: [USER: ENTER dates or "Not triggered in backtest"]
+- Flag persistence verified: [USER: YES or NO or N/A]
+- Notes: [USER: OPTIONAL]
+
+Check 5B (Daily Profit Cap +5%):
+- Status: [USER: ENTER PASS or FAIL or N/A]
+- Triggered on dates: [USER: ENTER dates or "Not triggered in backtest"]
+- Notes: [USER: OPTIONAL]
+
+Check 5C (Friday Hard Close 21:45):
+- Status: [USER: ENTER PASS or FAIL or N/A]
+- Triggered on dates: [USER: ENTER dates or "Not triggered in backtest"]
+- Time accuracy: [USER: ENTER e.g., "21:45 ±1 min"]
+- Notes: [USER: OPTIONAL]
+
+Check 6 (Position Sizing):
+- Status: [USER: ENTER PASS or FAIL or N/A]
+- XAUUSD lots checked: [USER: ENTER number or "N/A"]
+- EURUSD lots checked: [USER: ENTER number or "N/A"]
+- Risk accuracy: [USER: ENTER e.g., "0.6% ±0.05%"]
+- Notes: [USER: OPTIONAL]
+
+Unit Test Results:
+===================
+[USER: COPY EXACT LINE FROM JOURNAL showing final test status]
+Example:
+===== TESTS COMPLETE =====
+✓ All critical tests PASSED
+
+
+Backtest Logs Summary:
+======================
+[USER: OPTIONAL - Copy any relevant Journal output excerpts for audit trail]
+
+Example Excerpts:
+- First VA_CALC line (POC/VAH/VAL): [PASTE HERE]
+- First HARD_STOP_HIT or similar: [PASTE HERE if occurred]
+- Final test status line: [PASTE HERE]
+
+
+Overall Assessment:
+===================
+All checks status:
+- CHECK 1: [PASS/FAIL/N/A]
+- CHECK 2: [PASS/FAIL/N/A]
+- CHECK 3: [PASS/FAIL/N/A]
+- CHECK 4: [PASS/FAIL/N/A]
+- CHECK 5: [PASS/FAIL/N/A]
+- CHECK 6: [PASS/FAIL/N/A]
+
+Ready for Phase 2?: [USER: ENTER YES or NO]
+
+If NO, document blockers:
+[USER: LIST ANY ISSUES FOUND AND REQUIRED FIXES]
+
+Final Sign-off:
+===============
+Validation Date: [USER: ENTER DATE]
+Executor Name: [USER: ENTER NAME]
+MT5 Terminal: [USER: ENTER BROKER/PLATFORM INFO]
+Backtest Conditions: [USER: ANY SPECIAL CONDITIONS or "Standard setup"]
+
+Conclusion:
+[USER: BRIEFLY SUMMARIZE - EA ready for Phase 2, or issues found]
