@@ -23,9 +23,9 @@
 
 ## Current Position
 
-**Phase:** Not started (Roadmap approved)  
-**Current Plan:** None (awaiting Phase 1 planning)  
-**Focus:** Phase 1 — Volume Profile Core development  
+**Phase:** 1 — Context discussion complete  
+**Current Plan:** Ready for Phase 1 planning (`/gsd-plan-phase 1`)  
+**Focus:** Phase 1 — Volume Profile Core implementation  
 
 **Progress Metrics:**
 - Requirements defined: 42/42 (100% locked)
@@ -81,6 +81,16 @@ Phase 4 Target: 4 weeks
 | **Zero-lag Design (calc on bar close only)** | 99% CPU reduction vs. every-tick calculation | ✅ Locked |
 | **No Visual Objects (arrays only)** | Enables 10+ simultaneous charts without lag | ✅ Locked |
 | **Tick Volume (native MT5)** | 90%+ correlation with institutional volume; no custom indicator needed | ✅ Locked |
+
+### Phase 1 Implementation Decisions (LOCKED - 2026-05-13)
+
+| Decision | Approach | Status |
+|----------|----------|--------|
+| **D-01: Volume Proration** | Proportional to range (body/wick distribution based on actual price distance) | ✅ Locked |
+| **D-02: HVN/LVN Detection** | Local clustering (exact peak detection for maximum accuracy) | ✅ Locked |
+| **D-03: Risk Parameters** | Hardcoded in Phase 1, configurable in Phase 2+ | ✅ Locked |
+| **D-04: Code Organization** | Single .mq5 file Phase 1, modular refactor before Phase 2 | ✅ Locked |
+| **D-05: Testing Strategy** | Embedded unit tests + manual backtest validation (90%+ coverage) | ✅ Locked |
 
 ### Architecture Foundations (VALIDATED)
 
@@ -151,11 +161,12 @@ Phase 4 (Live Deployment)
 
 ### Session Continuity
 
-**Last Session:** Roadmap creation (requirements → phase mapping → success criteria)
+**Last Session:** Phase 1 context discussion (gray area analysis → implementation decisions)
 
 **Session Handoff:**
-- Roadmap approved and files written (.planning/ROADMAP.md, .planning/STATE.md)
-- 42/42 requirements mapped to phases (100% coverage)
+- Phase 1 context captured in `.planning/phases/01-volume-profile-core/01-CONTEXT.md`
+- 5 implementation decisions locked (volume proration, HVN/LVN detection, risk params, code org, testing)
+- Discussion log created for audit trail (.planning/phases/01-volume-profile-core/01-DISCUSSION-LOG.md)
 - No blockers identified; ready for Phase 1 planning
 - Next action: `/gsd-plan-phase 1` to decompose Phase 1 into executable tasks
 
@@ -163,7 +174,8 @@ Phase 4 (Live Deployment)
 - Architecture is locked (modular, zero-lag, no visual objects)
 - Risk framework is locked (0.6%, -2% hard stop, +5% profit cap)
 - Volume Profile methodology is locked (400-bin, 70% VA, HVN/LVN detection)
-- All major decisions in this STATE.md for reference
+- Phase 1 implementation decisions locked (see CONTEXT.md)
+- All major decisions in this STATE.md and phase-specific CONTEXT.md files for reference
 
 ---
 
