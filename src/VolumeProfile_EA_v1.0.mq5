@@ -166,6 +166,10 @@ int OnInit()
     Print("LVN Threshold: ", LVN_MULTIPLIER, "x average");
     Print("Value Area: ", VALUE_AREA_PERCENT * 100, "%");
 
+    // Validate broker connection and symbol
+    if (!IsConnected())
+        return INIT_FAILED;
+
     Print("\n===== RUNNING UNIT TESTS =====\n");
 
     // Run embedded unit tests
@@ -201,17 +205,17 @@ void OnTick()
         // Step 3: Detect HVN/LVN nodes
         IdentifyVolumeNodes();
 
-        // Step 4: Check daily limits (non-trading logic)
+        // Step 4: Check data quality before processing
+        if (!ValidateDataQuality())
+        {
+            LogAlert("SKIP_BAR", "Data quality check failed");
+            return;
+        }
+
+        // Step 5: Check daily limits (non-trading logic)
         CheckDailyLimits();
         CheckProfitCap();
         CheckFridayClose();
-
-        // Check data quality
-        if (!CheckDataQuality())
-        {
-            LogError("Data quality check failed");
-            return;
-        }
 
         // Validate profile
         ValidateProfileCalculation();
@@ -335,6 +339,20 @@ void CalculateCurrentVolumeProfile()
             LogAlert("WARNING", StringFormat("Volume distribution variance %.2f%% > 1%%, sum=%.0f, total=%d",
                 variance * 100, binSum, rawTotal));
         }
+        else if (variance > 0.001)  // >0.1% variance
+        {
+            LogAlert("WARNING", StringFormat("Volume distribution variance %.3f%% (minor)", variance * 100));
+        }
+        else
+        {
+            // Log successful calculation every 10 bars
+            static int logCounter = 0;
+            if (++logCounter % 10 == 0)
+            {
+                LogAlert("PROFILE_CALC", StringFormat("bins_sum=%.0f raw_total=%d variance=%.3f%%",
+                    binSum, rawTotal, variance * 100));
+            }
+        }
     }
 }
 
@@ -432,6 +450,13 @@ void CalculateValueArea()
         LogAlert("WARNING", StringFormat("VA width %.5f < bin size %.5f",
             vaWidth, currentProfile.binSize));
     }
+
+    // Log POC/VAH/VAL prices for audit trail
+    LogAlert("VA_CALC", StringFormat("POC=%.5f VAH=%.5f VAL=%.5f width_pips=%.2f",
+        currentProfile.pocPrice,
+        currentProfile.vahPrice,
+        currentProfile.valPrice,
+        (currentProfile.vahPrice - currentProfile.valPrice) / Point));
 }
 
 //+------------------------------------------------------------------+
@@ -697,6 +722,8 @@ bool CheckDailyLimits()
         dailyHardStopHit = true;
         dailyStats.hardStopHit = true;
 
+        LogAlert("HARD_STOP_HIT", StringFormat("closed=%.2f open=%.2f total=%.2f limit=%.2f",
+            closedPnL, openPnL, dailyTotalPnL, -dailyLossLimit));
         Print("WARNING: DAILY_HARD_STOP_HIT");
         Print("  Current Loss: ", dailyTotalPnL, " (Limit: -", dailyLossLimit, ")");
         Print("  No new trades allowed for remainder of day");
@@ -707,6 +734,14 @@ bool CheckDailyLimits()
     {
         dailyHardStopHit = false;
         dailyStats.hardStopHit = false;
+    }
+
+    // Log normal daily limits status periodically
+    static int limitsLogCounter = 0;
+    if (++limitsLogCounter % 100 == 0)
+    {
+        LogAlert("DAILY_LIMITS", StringFormat("closed=%.2f open=%.2f total=%.2f limit=%.2f status=OK",
+            closedPnL, openPnL, dailyTotalPnL, -dailyLossLimit));
     }
 
     return true;  // Trading allowed
@@ -884,8 +919,8 @@ bool AddPosition(long ticket, string symbol, double entry, double sl,
 
             positionCount++;
 
-            Print("Position added: ", symbol, " ticket=", ticket,
-                  " entry=", entry, " lots=", lots);
+            LogAlert("POSITION_ADD", StringFormat("symbol=%s ticket=%ld entry=%.5f sl=%.5f lots=%.2f count=%d/3",
+                symbol, ticket, entry, sl, lots, positionCount));
 
             return true;
         }
@@ -910,7 +945,7 @@ bool RemovePosition(long ticket)
             positionCount--;
             if (positionCount < 0) positionCount = 0;  // Safety
 
-            Print("Position removed: ", symbol, " ticket=", ticket);
+            LogAlert("POSITION_REMOVE", StringFormat("ticket=%ld count=%d/3", ticket, positionCount));
 
             return true;
         }
@@ -953,6 +988,74 @@ void ValidateProfileCalculation()
     {
         LogError("VAH <= VAL (invalid Value Area)");
     }
+}
+
+//+------------------------------------------------------------------+
+//| Validate data quality - comprehensive checks                     |
+//+------------------------------------------------------------------+
+bool ValidateDataQuality()
+{
+    // Check if price data is available and reasonable
+    double high = iHigh(Symbol(), PERIOD_CURRENT, 0);
+    double low = iLow(Symbol(), PERIOD_CURRENT, 0);
+    double close = iClose(Symbol(), PERIOD_CURRENT, 0);
+    long volume = iVolume(Symbol(), PERIOD_CURRENT, 0);
+
+    if (high <= 0 || low <= 0 || close <= 0)
+    {
+        LogError("Invalid OHLC data - High: " + DoubleToString(high, 5) +
+                 " Low: " + DoubleToString(low, 5) +
+                 " Close: " + DoubleToString(close, 5));
+        return false;
+    }
+
+    if (high < low)
+    {
+        LogError("High < Low in single bar (data corruption)");
+        return false;
+    }
+
+    if (volume <= 0)
+    {
+        LogAlert("WARNING", "Zero volume on current bar");
+        // Don't fail; some brokers have zero-volume bars
+    }
+
+    if (close < low || close > high)
+    {
+        LogAlert("WARNING", "Close outside High-Low range");
+    }
+
+    return true;
+}
+
+//+------------------------------------------------------------------+
+//| Check broker connection and symbol validity                      |
+//+------------------------------------------------------------------+
+bool IsConnected()
+{
+    if (!TerminalInfoInteger(TERMINAL_CONNECTED))
+    {
+        LogError("Terminal not connected to broker");
+        return false;
+    }
+
+    double tickValue = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_VALUE);
+    double tickSize = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_SIZE);
+
+    if (tickValue <= 0 || tickSize <= 0)
+    {
+        LogError("Invalid symbol or broker data not available - " + Symbol());
+        LogAlert("ERROR", "SYMBOL_TRADE_TICK_VALUE = " + DoubleToString(tickValue, 8));
+        LogAlert("ERROR", "SYMBOL_TRADE_TICK_SIZE = " + DoubleToString(tickSize, 8));
+        return false;
+    }
+
+    LogAlert("INFO", "Connected to broker, symbol=" + Symbol() +
+             " tick_value=" + DoubleToString(tickValue, 8) +
+             " tick_size=" + DoubleToString(tickSize, 8));
+
+    return true;
 }
 
 //+------------------------------------------------------------------+
