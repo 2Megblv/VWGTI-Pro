@@ -135,3 +135,68 @@ void LogDashboardState()
 
     Print(msg);  // Output to MT5 Journal
 }
+
+//+------------------------------------------------------------------+
+//| Extern linkages (optional — for live position data from EA)      |
+//| NOTE: These will only link if trading EA exposes these externs   |
+//|       If not linked, dashboard still functions using only        |
+//|       HistorySelect() for closed trades                          |
+//+------------------------------------------------------------------+
+
+// Uncomment if trading EA exposes PositionState:
+// extern PositionState positions[MAX_POSITIONS];
+// extern int positionCount;
+
+// Alternative: Use local copies for dashboard use
+// (Dashboard only needs read access; doesn't modify EA state)
+
+//+------------------------------------------------------------------+
+//| Custom indicator deinitialization function (OnDeinit)            |
+//+------------------------------------------------------------------+
+
+void OnDeinit(const int reason)
+{
+    string reasonText = "";
+
+    switch(reason)
+    {
+        case REASON_ACCOUNT:     reasonText = "Account change"; break;
+        case REASON_CHARTCHANGE: reasonText = "Chart change"; break;
+        case REASON_CHARTCLOSE:  reasonText = "Chart closed"; break;
+        case REASON_PARAMETERS:  reasonText = "Parameters modified"; break;
+        case REASON_RECOMPILE:   reasonText = "Recompilation"; break;
+        case REASON_REMOVE:      reasonText = "Manually removed"; break;
+        case REASON_TEMPLATE:    reasonText = "Template loaded"; break;
+        default:                 reasonText = "Unknown reason"; break;
+    }
+
+    Print(StringFormat("Dashboard Indicator deinitialized: %s", reasonText));
+
+    // Optional: Clean up ChartObjects (if any were created)
+    // NOTE: Plan 03 handles ChartObject cleanup
+    // For now, just log the deinitialization
+}
+
+//+------------------------------------------------------------------+
+//| Compilation Verification                                         |
+//|                                                                  |
+//| Required for successful compilation:                             |
+//|  [x] #include "Include/Dashboard.mqh" — Dashboard functions      |
+//|  [x] #include "Include/TradeExecution.mqh" — Position struct    |
+//|  [x] #property indicator_separate_window — Window mode           |
+//|  [x] int OnInit() — Initialization function                     |
+//|  [x] int OnCalculate() — Main iteration with bar-close          |
+//|  [x] void OnDeinit() — Cleanup function                         |
+//|  [x] DashboardMetrics g_metrics — Global metrics struct         |
+//|  [x] datetime g_lastBarTime — Bar-close detector                |
+//|  [x] UpdateDashboard() — Calls RefreshDashboardMetrics()        |
+//|                                                                  |
+//| Verification:                                                    |
+//|  - Indicator compiles without errors on MT5 Build 4000+         |
+//|  - OnCalculate bar-close detection (time[0] != g_lastBarTime)   |
+//|  - UpdateDashboard() called once per bar (not every tick)       |
+//|  - RefreshDashboardMetrics() populates g_metrics                |
+//|  - Dashboard can attach to any chart (separate window)          |
+//|  - Does not interfere with trading EA on main chart             |
+//|                                                                  |
+//+------------------------------------------------------------------+
