@@ -34,6 +34,7 @@
 #include "Include/RiskManager.mqh"
 #include "Include/SignalDetection.mqh"
 #include "Include/MultiTimeframeContext.mqh"
+#include "Include/TradeExecution.mqh"
 
 // ==================== INPUT PARAMETERS ====================
 
@@ -62,7 +63,7 @@ datetime          lastSessionDate = 0;          // Last session date for reset
 //+------------------------------------------------------------------+
 int OnInit()
 {
-    Print("===== PHASE 2: MODULAR REFACTORED EA =====");
+    Print("===== PHASE 2: MODULAR REFACTORED EA WITH ORDER EXECUTION =====");
     Print("EA Magic Number: ", EA_MAGIC_NUMBER);
     Print("Lookback Period: ", Lookback_Period, " bars");
     Print("Risk Percentage: ", Risk_Percentage, "%");
@@ -74,6 +75,10 @@ int OnInit()
     // Validate broker connection and symbol
     if (!IsConnected())
         return INIT_FAILED;
+
+    // Initialize CTrade for order placement (Wave 2)
+    trade.SetExpertMagicNumber(EA_MAGIC_NUMBER);
+    LogAlert("TRADE_INIT", "CTrade initialized with magic number " + IntegerToString(EA_MAGIC_NUMBER));
 
     Print("\n===== RUNNING UNIT TESTS =====\n");
 
@@ -96,6 +101,9 @@ void OnTick()
         LogError("Broker disconnected");
         return;
     }
+
+    // EVERY TICK: Monitor existing positions for exit conditions (Wave 2)
+    MonitorPositionExits();
 
     // Recalculate profile on new bar
     if (NewBar())
@@ -172,17 +180,52 @@ void OnTick()
                     return;
                 }
 
-                // Log Setup 1 signal detection (Wave 2 will implement order placement)
+                // Log Setup 1 signal detection
                 LogAlert("SETUP1_SIGNAL_DETECTED",
                     StringFormat("direction=%s entry=%.5f sweepLow=%.5f",
                         sig1.isLong ? "LONG" : "SHORT",
                         sig1.confirmationClose,
                         sig1.sweepLow));
 
-                // NOTE: Wave 2 will add order placement logic here
-                // - Calculate position size, SL, TP
-                // - Place market order via CTrade
-                // - Track position in positions[] array
+                // Wave 2: Order placement on Setup 1 signal
+                // Calculate position details
+                double entryPrice = sig1.confirmationClose;
+                double stopLoss = sig1.sweepLow - (10 * Point);  // 10 pips below sweep low
+                double takeProfit = sig1.isLong ? currentProfile.vahPrice : currentProfile.valPrice;  // D-03/D-06: opposite edge
+
+                // Calculate lot size
+                double lotSize = CalculateLotSize(entryPrice, stopLoss);
+
+                if (lotSize > 0)
+                {
+                    // Calculate R:R ratio before placing order
+                    double rr = CalculateRiskRewardRatio(entryPrice, stopLoss, takeProfit);
+
+                    // Place market order
+                    OrderResult result = PlaceMarketOrder(
+                        sig1.isLong ? ORDER_TYPE_BUY : ORDER_TYPE_SELL,
+                        lotSize,
+                        entryPrice,
+                        stopLoss,
+                        takeProfit);
+
+                    // On success, add position to tracking
+                    if (result.success)
+                    {
+                        AddPosition(result.ticket, Symbol(), sig1.isLong, result.fillPrice,
+                                   stopLoss, takeProfit, lotSize, "Setup1", rr);
+                        LogAlert("ENTRY_RR", StringFormat("Setup 1 Entry RR Ratio=%.2f:1", rr));
+                    }
+                    else
+                    {
+                        LogError(StringFormat("Setup 1 order placement failed. Slippage=%.1f pips",
+                                            result.slippage));
+                    }
+                }
+                else
+                {
+                    LogError("Setup 1: Invalid lot size calculation; skipping entry");
+                }
             }
         }
         else
@@ -205,17 +248,52 @@ void OnTick()
                     return;
                 }
 
-                // Log Setup 2 signal detection (Wave 2 will implement order placement)
+                // Log Setup 2 signal detection
                 LogAlert("SETUP2_SIGNAL_DETECTED",
                     StringFormat("direction=%s hvnEdge=%.5f sweepLow=%.5f",
                         sig2.isLong ? "LONG" : "SHORT",
                         sig2.hvnEdgePrice,
                         sig2.sweepLow));
 
-                // NOTE: Wave 2 will add order placement logic here
-                // - Calculate position size, SL, TP
-                // - Place market order via CTrade
-                // - Track position in positions[] array
+                // Wave 2: Order placement on Setup 2 signal
+                // Calculate position details
+                double entryPrice = sig2.hvnEdgePrice;
+                double stopLoss = sig2.sweepLow - (10 * Point);  // 10 pips below LVN sweep low
+                double takeProfit = sig2.isLong ? currentProfile.vahPrice : currentProfile.valPrice;  // D-06: opposite edge
+
+                // Calculate lot size
+                double lotSize = CalculateLotSize(entryPrice, stopLoss);
+
+                if (lotSize > 0)
+                {
+                    // Calculate R:R ratio before placing order
+                    double rr = CalculateRiskRewardRatio(entryPrice, stopLoss, takeProfit);
+
+                    // Place market order
+                    OrderResult result = PlaceMarketOrder(
+                        sig2.isLong ? ORDER_TYPE_BUY : ORDER_TYPE_SELL,
+                        lotSize,
+                        entryPrice,
+                        stopLoss,
+                        takeProfit);
+
+                    // On success, add position to tracking
+                    if (result.success)
+                    {
+                        AddPosition(result.ticket, Symbol(), sig2.isLong, result.fillPrice,
+                                   stopLoss, takeProfit, lotSize, "Setup2", rr);
+                        LogAlert("ENTRY_RR", StringFormat("Setup 2 Entry RR Ratio=%.2f:1", rr));
+                    }
+                    else
+                    {
+                        LogError(StringFormat("Setup 2 order placement failed. Slippage=%.1f pips",
+                                            result.slippage));
+                    }
+                }
+                else
+                {
+                    LogError("Setup 2: Invalid lot size calculation; skipping entry");
+                }
             }
         }
     }
