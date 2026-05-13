@@ -178,7 +178,8 @@ VolumeProfile CalculateCurrentVolumeProfile(int lookbackBars)
     if (maxPrice <= minPrice)
     {
         LogError("Invalid price range for volume profile");
-        return profile;  // Return empty profile
+        profile.pocPrice = 0;  // Initialize profile.pocPrice to 0
+        return profile;
     }
 
     // Calculate bin size
@@ -231,7 +232,7 @@ VolumeProfile CalculateCurrentVolumeProfile(int lookbackBars)
             int binIdx = (int)((close - minPrice) / binSize);
             if (binIdx >= 0 && binIdx < VOLUME_BINS)
             {
-                profile.volumeArray[binIdx] += volume;
+                profile.volumeArray[binIdx] += (double)volume;
             }
         }
     }
@@ -363,7 +364,7 @@ void CalculateValueArea(VolumeProfile &profile)
         profile.pocPrice,
         profile.vahPrice,
         profile.valPrice,
-        (profile.vahPrice - profile.valPrice) / Point));
+        (profile.vahPrice - profile.valPrice) / Point()));
 }
 
 //+------------------------------------------------------------------+
@@ -476,7 +477,7 @@ double CalculateLotSize(double entryPrice, double stopLossPrice)
     }
 
     // Step 2: Calculate SL distance in pips (broker's point units)
-    double slDistancePoints = MathAbs(entryPrice - stopLossPrice) / Point;
+    double slDistancePoints = MathAbs(entryPrice - stopLossPrice) / Point();
 
     if (slDistancePoints <= 0)
     {
@@ -697,7 +698,7 @@ CandlePattern DetectCandlePattern()
         result.isValid = true;
     }
     // DOJI: Open ≈ close (within 1 pip), wicks extending both sides
-    else if (bodySize <= 1 * Point && lowerWick > 0 && upperWick > 0)
+    else if (bodySize <= 1 * Point() && lowerWick > 0 && upperWick > 0)
     {
         result.patternType = CandlePattern::DOJI;
         result.isValid = true;
@@ -857,12 +858,12 @@ bool Validate15MDirectionBias(bool isLongEntry)
     if (isLongEntry)
     {
         // LONG: require at least 50 pips above 15M VAL (conservative buffer)
-        return (mid > profile15M.valPrice + 50 * Point);
+        return (mid > profile15M.valPrice + 50 * Point());
     }
     else
     {
         // SHORT: require at least 50 pips below 15M VAH (conservative buffer)
-        return (mid < profile15M.vahPrice - 50 * Point);
+        return (mid < profile15M.vahPrice - 50 * Point());
     }
 }
 
@@ -1053,7 +1054,7 @@ OrderResult PlaceMarketOrder(ENUM_ORDER_TYPE orderType, double lots,
             result.fillPrice = tradeResult.price;
 
             // D-07: Validate slippage (50-pip tolerance)
-            double slippagePips = MathAbs(result.fillPrice - intendedPrice) / Point;
+            double slippagePips = MathAbs(result.fillPrice - intendedPrice) / Point();
 
             if (slippagePips <= SLIPPAGE_LIMIT)
             {
@@ -1274,9 +1275,9 @@ void ClosePosition(long ticket, double exitPrice, string exitReason, double clos
     PositionState &pos = positions[idx];
 
     // Calculate P&L for this trade
-    double pnlPips = (exitPrice - pos.entryPrice) / Point;
+    double pnlPips = (exitPrice - pos.entryPrice) / Point();
     if (!pos.isLong)
-        pnlPips = (pos.entryPrice - exitPrice) / Point;  // SHORT P&L inverted
+        pnlPips = (pos.entryPrice - exitPrice) / Point();  // SHORT P&L inverted
 
     // Close position via CTrade
     bool closed = trade.PositionClose(ticket);
@@ -1305,8 +1306,8 @@ double CalculateRiskRewardRatio(double entryPrice, double stopLossPrice,
 {
     // R:R = (TP distance in pips) / (SL distance in pips)
 
-    double riskDistancePips = MathAbs(entryPrice - stopLossPrice) / Point;
-    double rewardDistancePips = MathAbs(takeProfitPrice - entryPrice) / Point;
+    double riskDistancePips = MathAbs(entryPrice - stopLossPrice) / Point();
+    double rewardDistancePips = MathAbs(takeProfitPrice - entryPrice) / Point();
 
     if (riskDistancePips <= 0)
     {
@@ -1373,8 +1374,9 @@ DailyLimitState CalculateDailyPnL()
 
     // Add profit from this closed position
     // In MT5, profit is in account currency
-    double profit = HistoryOrderGetDouble(ticket, ORDER_PROFIT);
-    result.closedPnL += profit;
+    double profit = 0;
+    if (HistoryOrderGetDouble(ticket, ORDER_PROFIT, profit))
+        result.closedPnL += profit;
   }
 
   // Step 2: Scan open positions for current P&L
@@ -1476,9 +1478,9 @@ bool EnforceDailyLimits()
       double newSL = positions[i].entryPrice;  // Breakeven
 
       if (positions[i].isLong)
-        newSL += 5 * Point;  // +5 pips profit
+        newSL += 5 * Point();  // +5 pips profit
       else
-        newSL -= 5 * Point;  // -5 pips for SHORT
+        newSL -= 5 * Point();  // -5 pips for SHORT
 
       // Update position SL via CTrade
       MqlTradeRequest request = {0};
@@ -1488,12 +1490,13 @@ bool EnforceDailyLimits()
       request.sl = newSL;
       request.tp = positions[i].takeProfit;
 
-      MqlTradeResult result;
-      trade.Send(request, result);
-
-      if (result.retcode == TRADE_RETCODE_DONE)
+      MqlTradeResult result = {0};
+      if (trade.Send(request, result))
       {
-        positions[i].stopLoss = newSL;
+        if (result.retcode == TRADE_RETCODE_DONE)
+        {
+          positions[i].stopLoss = newSL;
+        }
       }
     }
 
@@ -1789,13 +1792,13 @@ bool ConfirmReversal1M(bool reversalIsLong)
   {
     // LONG reversal: price must break above 1M recent high + 10 pips buffer
     // Using ask price for entry perspective
-    return (ask > high1M + 10 * Point);
+    return (ask > high1M + 10 * Point());
   }
   else
   {
     // SHORT reversal: price must break below 1M recent low - 10 pips buffer
     // Using bid price for entry perspective
-    return (bid < low1M - 10 * Point);
+    return (bid < low1M - 10 * Point());
   }
 }
 
@@ -1869,7 +1872,7 @@ double GetDistanceToTP(int positionIndex)
   double currentPrice = positions[positionIndex].isLong ? bid : ask;
 
   double distanceInPrice = MathAbs(positions[positionIndex].takeProfit - currentPrice);
-  return distanceInPrice / Point;  // Convert to pips
+  return distanceInPrice / Point();  // Convert to pips
 }
 
 //+------------------------------------------------------------------+
@@ -2069,7 +2072,7 @@ void OnTick()
                 // Wave 2: Order placement on Setup 1 signal
                 // Calculate position details
                 double entryPrice = sig1.confirmationClose;
-                double stopLoss = sig1.sweepLow - (10 * Point);  // 10 pips below sweep low
+                double stopLoss = sig1.sweepLow - (10 * Point());  // 10 pips below sweep low
                 double takeProfit = sig1.isLong ? currentProfile.vahPrice : currentProfile.valPrice;  // D-03/D-06: opposite edge
 
                 // Calculate lot size
@@ -2137,7 +2140,7 @@ void OnTick()
                 // Wave 2: Order placement on Setup 2 signal
                 // Calculate position details
                 double entryPrice = sig2.hvnEdgePrice;
-                double stopLoss = sig2.sweepLow - (10 * Point);  // 10 pips below LVN sweep low
+                double stopLoss = sig2.sweepLow - (10 * Point());  // 10 pips below LVN sweep low
                 double takeProfit = sig2.isLong ? currentProfile.vahPrice : currentProfile.valPrice;  // D-06: opposite edge
 
                 // Calculate lot size
