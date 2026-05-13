@@ -1,7 +1,11 @@
 # MT5 Volume Profile Swing Trading EA — Project Context
 
+⚠️ **SCOPE LOCKED: MQL5 CODEBASE ONLY** — See [SCOPE.md](.planning/SCOPE.md) for immutable boundaries  
+**Do NOT expand scope to fix issues. Ask user before making changes outside stated scope.**
+
 **Project ID:** VWGTI-PRO-VP-EA  
 **Initiative:** Automated swing trading using Volume Profile methodology  
+**Code Language:** MQL5 ONLY (no other languages permitted)
 **Status:** Initialization Phase  
 **Last Updated:** 2026-05-13
 
