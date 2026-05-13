@@ -51,8 +51,8 @@ input double Risk_Percentage      = 0.6;      // Risk percentage per trade (0.6%
 VolumeProfile     currentProfile;               // Current session profile
 VolumeProfile     previousSessionProfile;       // Previous session profile (for comparison)
 DailyLimitState   dailyLimits;                  // Daily P&L tracking
-PositionRecord    positions[3];                 // Max 3 simultaneous positions
-int               positionCount = 0;            // Current number of open positions
+// Note: PositionState and positions[] declared in TradeExecution.mqh
+// Note: CTrade trade instance declared in TradeExecution.mqh
 
 bool              dailyHardStopHit = false;     // -2% loss flag
 bool              dailyProfitCapReached = false;// +5% gain flag
@@ -321,119 +321,12 @@ void OnDeinit(int reason)
 }
 
 // ==================== POSITION MANAGEMENT ====================
-
-//+------------------------------------------------------------------+
-//| Check if new position can be opened (REQ-031)                    |
-//| Validates max 1 position per asset rule                          |
-//+------------------------------------------------------------------+
-bool CanOpenNewPosition(string symbol)
-{
-    // REQ-031: Max 1 position per asset (XAUUSD OR EURUSD, not both)
-
-    // Check if already have a position on this symbol
-    for (int i = 0; i < positionCount; i++)
-    {
-        if (positions[i].ticket > 0)
-        {
-            // Check if same symbol
-            if (positions[i].symbol == symbol)
-            {
-                Print("ERROR: Cannot open new position on ", symbol,
-                      "; already have active position (ticket: ",
-                      positions[i].ticket, ")");
-                return false;  // Already open on this asset
-            }
-        }
-    }
-
-    // Check if position array is full
-    if (positionCount >= 3)
-    {
-        Print("ERROR: Position array full (max 3 simultaneous)");
-        return false;
-    }
-
-    // Check if symbol is valid (XAUUSD or EURUSD)
-    if (symbol != "XAUUSD" && symbol != "EURUSD")
-    {
-        Print("ERROR: Invalid symbol ", symbol, "; only XAUUSD and EURUSD supported");
-        return false;
-    }
-
-    return true;  // Can open new position
-}
-
-//+------------------------------------------------------------------+
-//| Add position to tracking array (REQ-031)                         |
-//+------------------------------------------------------------------+
-bool AddPosition(long ticket, string symbol, double entry, double sl,
-                 double tp1, double tp2, double lots)
-{
-    if (!CanOpenNewPosition(symbol))
-        return false;
-
-    // Add to first available slot
-    for (int i = 0; i < 3; i++)
-    {
-        if (positions[i].ticket <= 0)  // Empty slot
-        {
-            positions[i].ticket = ticket;
-            positions[i].symbol = symbol;
-            positions[i].entryPrice = entry;
-            positions[i].stopLoss = sl;
-            positions[i].takeProfit1 = tp1;
-            positions[i].takeProfit2 = tp2;
-            positions[i].lots = lots;
-            positions[i].entryTime = TimeCurrent();
-
-            positionCount++;
-
-            LogAlert("POSITION_ADD", StringFormat("symbol=%s ticket=%ld entry=%.5f sl=%.5f lots=%.2f count=%d/3",
-                symbol, ticket, entry, sl, lots, positionCount));
-
-            return true;
-        }
-    }
-
-    return false;  // No empty slots
-}
-
-//+------------------------------------------------------------------+
-//| Remove position from tracking array (REQ-031)                    |
-//+------------------------------------------------------------------+
-bool RemovePosition(long ticket)
-{
-    for (int i = 0; i < 3; i++)
-    {
-        if (positions[i].ticket == ticket)
-        {
-            string symbol = positions[i].symbol;
-            ArrayZero(positions[i]);  // Clear struct
-            positions[i].ticket = 0;  // Mark as empty
-
-            positionCount--;
-            if (positionCount < 0) positionCount = 0;  // Safety
-
-            LogAlert("POSITION_REMOVE", StringFormat("ticket=%ld count=%d/3", ticket, positionCount));
-
-            return true;
-        }
-    }
-
-    return false;  // Ticket not found
-}
-
-//+------------------------------------------------------------------+
-//| Reset daily statistics at start of day                           |
-//+------------------------------------------------------------------+
-void ResetDailyStats()
-{
-    dailyLimits.closedPnL = 0;
-    dailyLimits.openPnL = 0;
-    dailyLimits.totalPnL = 0;
-    dailyLimits.hardStopHit = false;
-    dailyLimits.profitCapReached = false;
-}
+// NOTE: Position management functions are defined in TradeExecution.mqh:
+//   - PlaceMarketOrder()
+//   - AddPosition()
+//   - RemovePosition()
+//   - MonitorPositionExits()
+// Main EA uses these from TradeExecution.mqh instead of local definitions
 
 // ==================== DATA VALIDATION ====================
 

@@ -28,31 +28,16 @@
 #define FRIDAY_CLOSE_MIN 45
 
 // ==================== DATA STRUCTURES ====================
+// NOTE: DailyLimitState and PositionState are now defined in:
+//   - RiskLimits.mqh (DailyLimitState)
+//   - TradeExecution.mqh (PositionState)
+// Do NOT duplicate here to avoid conflicts
 
-struct DailyLimitState {
-    double closedPnL;                   // Closed profit/loss today
-    double openPnL;                     // Open position P&L
-    double totalPnL;                    // Total P&L today
-    bool hardStopHit;                   // -2% loss limit triggered
-    bool profitCapReached;              // +5% profit cap triggered
-};
-
-struct PositionRecord {
-    long   ticket;                      // Order ticket number
-    string symbol;                      // Trading symbol
-    double entryPrice;                  // Entry price
-    double stopLoss;                    // Stop loss price
-    double takeProfit1;                 // First take profit (65%)
-    double takeProfit2;                 // Second take profit (35%)
-    double lots;                        // Position size
-    datetime entryTime;                 // Entry timestamp
-};
-
-// ==================== GLOBAL STATE (to be declared in main EA) ====================
-// extern: PositionRecord positions[3];
-// extern: int positionCount;
-// extern: DailyLimitState dailyLimits;
-// extern: int EA_MAGIC_NUMBER;
+// ==================== GLOBAL STATE (defined in main EA and TradeExecution.mqh) ====================
+// extern: PositionState positions[MAX_POSITIONS];  (from TradeExecution.mqh)
+// extern: int positionCount;  (from TradeExecution.mqh)
+// extern: DailyLimitState dailyLimits;  (from RiskLimits.mqh)
+// extern: CTrade trade;  (from TradeExecution.mqh)
 
 // ==================== FUNCTION DECLARATIONS ====================
 
