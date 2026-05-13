@@ -1,0 +1,106 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 // This Pine Script\'ae code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/\
+//@version=6\
+strategy("Swing Volume Profile Strategy [MT5 Pro]", overlay = true, initial_capital = 10000, default_qty_type = strategy.percent_of_equity, default_qty_value = 10)\
+\
+// --- Inputs ---\
+grp_htf = "Higher Timeframe Settings (5m)"\
+htf_res = input.timeframe("5", "HTF Timeframe", group = grp_htf)\
+swing_len = input.int(20, "Swing Detection Length", minval = 5, group = grp_htf)\
+poc_threshold = input.float(0.1, "PoC Proximity Threshold (%)", minval = 0.01, step = 0.01, group = grp_htf)\
+\
+grp_ltf = "Lower Timeframe Confirmation (1m)"\
+ema_fast_len = input.int(9, "Fast EMA Length", group = grp_ltf)\
+ema_slow_len = input.int(21, "Slow EMA Length", group = grp_ltf)\
+\
+grp_mt5 = "MT5 Automation (PineConnector Style)"\
+mt5_id = input.string("LICENSE_ID", "MT5 License ID", group = grp_mt5)\
+mt5_risk = input.float(1.0, "Lot Size / Risk", minval = 0.01, group = grp_mt5, tooltip = "Enter Lot size or Risk percentage depending on your bridge settings")\
+rr_ratio = input.float(2.0, "Risk/Reward Ratio", step = 0.1, group = grp_mt5)\
+\
+grp_trail = "Advanced Exit & Trailing"\
+use_trail = input.bool(true, "Enable Trailing Stop", group = grp_trail)\
+trail_activation = input.int(100, "Trail Activation (Ticks)", minval = 1, group = grp_trail, tooltip = "Profit level in ticks to start trailing")\
+trail_step = input.int(50, "Trail Step (Ticks)", minval = 1, group = grp_trail, tooltip = "Distance to maintain from price in ticks")\
+exit_on_ema = input.bool(false, "Exit on EMA Reverse Cross", group = grp_trail, tooltip = "Close trade if EMAs cross back, regardless of SL/TP")\
+\
+// --- HTF Data Extraction ---\
+[htf_high, htf_low] = request.security(syminfo.tickerid, htf_res, [high, low])\
+\
+p_hi = ta.pivothigh(htf_high, swing_len, swing_len)\
+p_lo = ta.pivotlow(htf_low, swing_len, swing_len)\
+\
+var float last_poc = na\
+var float swing_high_level = na\
+var float swing_low_level = na\
+\
+if not na(p_hi) or not na(p_lo)\
+    swing_high_level := ta.highest(htf_high, swing_len * 2)\
+    swing_low_level := ta.lowest(htf_low, swing_len * 2)\
+    last_poc := math.avg(swing_high_level, swing_low_level) \
+\
+// --- LTF Logic ---\
+ema_fast = ta.ema(close, ema_fast_len)\
+ema_slow = ta.ema(close, ema_slow_len)\
+\
+near_poc = not na(last_poc) and math.abs(close - last_poc) / last_poc * 100 <= poc_threshold\
+long_entry_signal = near_poc and ta.crossover(ema_fast, ema_slow) and close > last_poc\
+short_entry_signal = near_poc and ta.crossunder(ema_fast, ema_slow) and close < last_poc\
+\
+// --- MT5 Message Builder ---\
+// Format: ID,Action,Symbol,risk,sl,tp\
+f_build_mt5_msg(action, sl, tp) =>\
+    str.format("\{0\},\{1\},\{2\},risk=\{3\},sl=\{4\},tp=\{5\}", mt5_id, action, syminfo.ticker, str.tostring(mt5_risk), str.tostring(sl, format.mintick), str.tostring(tp, format.mintick))\
+\
+f_build_mt5_close(action) =>\
+    str.format("\{0\},\{1\},\{2\}", mt5_id, action, syminfo.ticker)\
+\
+// --- Strategy Execution ---\
+// Long Entry\
+if long_entry_signal\
+    float sl = swing_low_level\
+    float tp = close + (close - sl) * rr_ratio\
+    strategy.entry("Long", strategy.long, comment = "Buy", alert_message = f_build_mt5_msg("buy", sl, tp))\
+\
+// Short Entry\
+if short_entry_signal\
+    float sl = swing_high_level\
+    float tp = close - (sl - close) * rr_ratio\
+    strategy.entry("Short", strategy.short, comment = "Sell", alert_message = f_build_mt5_msg("sell", sl, tp))\
+\
+// Management & Exits\
+if strategy.position_size > 0\
+    if exit_on_ema and ta.crossunder(ema_fast, ema_slow)\
+        strategy.close("Long", comment = "EMA Exit", alert_message = f_build_mt5_close("closelong"))\
+    \
+    strategy.exit("Exit Long", "Long", \
+         stop = swing_low_level, \
+         limit = strategy.opentrades.profit(strategy.opentrades - 1) > 0 ? na : na, // Handled by points\
+         trail_points = use_trail ? trail_activation : na, \
+         trail_offset = use_trail ? trail_step : na,\
+         comment_loss = "SL", comment_profit = "TP/Trail",\
+         alert_message = f_build_mt5_close("closelong"))\
+\
+if strategy.position_size < 0\
+    if exit_on_ema and ta.crossover(ema_fast, ema_slow)\
+        strategy.close("Short", comment = "EMA Exit", alert_message = f_build_mt5_close("closeshort"))\
+        \
+    strategy.exit("Exit Short", "Short", \
+         stop = swing_high_level, \
+         trail_points = use_trail ? trail_activation : na, \
+         trail_offset = use_trail ? trail_step : na,\
+         comment_loss = "SL", comment_profit = "TP/Trail",\
+         alert_message = f_build_mt5_close("closeshort"))\
+\
+// --- Visuals ---\
+plot(last_poc, "5m PoC", color.new(color.orange, 0), 2, plot.style_linebr)\
+plot(ema_fast, "Fast EMA", color.new(#089981, 0))\
+plot(ema_slow, "Slow EMA", color.new(#f23645, 0))\
+bgcolor(near_poc ? color.new(color.orange, 90) : na)\
+}
