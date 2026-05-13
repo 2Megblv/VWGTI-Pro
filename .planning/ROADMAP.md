@@ -3,7 +3,7 @@
 **Project:** MT5 Volume Profile Swing Trading Expert Advisor  
 **Version:** 1.0 (Minimal Viable Product)  
 **Last Updated:** 2026-05-13  
-**Status:** Phase 2 Planning Complete
+**Status:** Phase 5 Planning Complete
 
 ---
 
@@ -15,8 +15,15 @@
 - [x] **Phase 2: Signal Detection & Execution** - Setup 1 & 2 entry logic + execution + single TP + logging (trading fully operational)
   - **Plans:** 02-01, 02-02, 02-03, 02-04 (4 plans complete)
   - **Status:** Planning complete → Ready for execution
-- [ ] **Phase 3: Backtesting & Validation** - 1-year backtest on both symbols; win rate/profit factor validation
+- [x] **Phase 3: Backtesting & Validation** - 1-year backtest on both symbols; win rate/profit factor validation
+  - **Plans:** 03-01, 03-02, 03-03, 03-04 (4 plans complete)
+  - **Status:** Planning complete → Ready for execution
 - [ ] **Phase 4: Live Deployment & Monitoring** - Live account validation; 30 days zero-error operation
+  - **Plans:** 0 plans (pending Phase 3 completion)
+  - **Status:** Not yet planned
+- [x] **Phase 5: Volume Profile Dashboard** — Real-time performance panel with equity curve, P&L metrics, win rate, profit factor, max drawdown
+  - **Plans:** 05-01, 05-02, 05-03 (3 plans complete)
+  - **Status:** Planning complete → Ready for execution
 
 ---
 
@@ -100,7 +107,14 @@
   4. 200+ trades executed in 1-year backtest across XAUUSD + EURUSD combined
   5. Backtest projected P&L within ±20% of conservative estimate (validates calculation accuracy, no overfitting)
 
-**Plans:** TBD (pending Phase 2 completion)
+**Plans:** 4 plans
+
+| Plan | Objective | 
+|------|-----------|
+| 03-01-PLAN.md | Backtest Setup & Data Preparation |
+| 03-02-PLAN.md | Historical Run (2024 data) |
+| 03-03-PLAN.md | Historical Run (2025 data) |
+| 03-04-PLAN.md | Results Analysis & Gate Validation |
 
 ---
 
@@ -123,14 +137,49 @@
 
 ---
 
+### Phase 5: Volume Profile Dashboard — Trade Data Visualisation and Reporting
+
+**Goal:** Live MT5 performance panel displaying real-time equity curve, daily/weekly P&L breakdown, summary statistics (win rate, profit factor, max drawdown), and per-symbol performance (XAUUSD vs EURUSD). Panel runs on dedicated chart window; updates on every bar close without interfering with trading EA zero-lag constraint.
+
+**Depends on:** Phase 4 (requires live trading to have data to visualize)
+
+**Requirements:** REQ-042 (Metrics calculation and display)
+
+**Success Criteria** (what must be TRUE when this phase completes):
+  1. Dashboard indicator attaches to dedicated MT5 chart window (separate_window mode)
+  2. Equity curve displays running account balance in real-time
+  3. Daily/weekly P&L bars show daily profit/loss breakdown
+  4. Summary stats display: win rate %, profit factor, max daily drawdown, total trades executed
+  5. Phase 3 success gates validated and displayed: win rate ≥50% ✓, profit factor ≥1.5 ✓, max DD ≤2% ✓
+  6. Per-symbol breakdown shows XAUUSD and EURUSD performance split separately
+  7. Dashboard updates exactly once per completed bar (bar-close trigger; not every tick)
+  8. Zero CPU overhead on trading EA; both EA and dashboard operate independently
+
+**Plans:** 3 plans
+
+| Plan | Objective | Wave |
+|------|-----------|------|
+| 05-01-PLAN.md | Dashboard.mqh core metrics calculation engine | 1 |
+| 05-02-PLAN.md | Dashboard_Indicator.mq5 indicator lifecycle + bar-close orchestration | 1 |
+| 05-03-PLAN.md | ChartObject rendering + visual validation + integration | 2 |
+
+**Wave Structure:**
+- **Wave 1:** Plans 05-01 & 05-02 (parallel) — Dashboard.mqh (metrics engine) and Dashboard_Indicator.mq5 (indicator lifecycle)
+  - 05-01: DashboardMetrics struct, HistorySelect() aggregation, win rate/PF/max DD calculation, per-symbol breakdown
+  - 05-02: OnInit (init), OnCalculate (bar-close detection), UpdateDashboard (orchestration), OnDeinit (cleanup)
+- **Wave 2:** Plan 05-03 (depends on Wave 1) — RenderDashboard(), UpdateDashboardLabel(), visual panel layout, Phase 3 gate display
+
+---
+
 ## Progress Tracking
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Volume Profile Core | 3/3 ✅ | Planning complete | 2026-05-13 |
 | 2. Signal Detection & Execution | 4/4 ✅ | Planning complete | 2026-05-13 |
-| 3. Backtesting & Validation | 0/5 | Not started | — |
-| 4. Live Deployment & Monitoring | 0/5 | Not started | — |
+| 3. Backtesting & Validation | 4/4 ✅ | Planning complete | 2026-05-13 |
+| 4. Live Deployment & Monitoring | 0/? | Not yet planned | — |
+| 5. Volume Profile Dashboard | 3/3 ✅ | Planning complete | 2026-05-13 |
 
 ---
 
@@ -142,8 +191,9 @@
 | Phase 2 | REQ-011–028, REQ-038–042 | 20 | Signal Detection + Execution |
 | Phase 3 | All 42 (backtest validation) | 42 | Historical performance validation |
 | Phase 4 | All 42 (live validation) | 42 | Production stability validation |
+| Phase 5 | REQ-042 | 1 | Metrics calculation & display |
 
-**Total Coverage:** 42/42 requirements mapped (100%)
+**Total Coverage:** 42/42 requirements mapped + 1 additional (REQ-042 refined in Phase 5)
 
 ---
 
@@ -162,32 +212,42 @@ Phase 2 (2-3 weeks) [PLANNING COMPLETE 2026-05-13]
   ├─ 4 plans (02-01, 02-02, 02-03, 02-04) ready for execution
   └─ Unblocks: Phase 3
   
-Phase 3 (2 weeks)
-  ├─ Deliverable: 1-year backtest results
-  ├─ Gate: Win rate ≥50%, PF ≥1.5, DD ≤2%
-  └─ Unblocks: Phase 4
+Phase 3 (2 weeks) [PLANNING COMPLETE 2026-05-13]
+  ├─ Deliverable: 1-year backtest results (2024 + 2025)
+  ├─ Gate: Win rate ≥50%, PF ≥1.5, DD ≤2% (BOTH years)
+  ├─ 4 plans (03-01, 03-02, 03-03, 03-04) ready for execution
+  └─ Unblocks: Phase 4 & Phase 5
   
-Phase 4 (4 weeks)
+Phase 5 (1-2 weeks) [PLANNING COMPLETE 2026-05-13]
+  ├─ Deliverable: Live dashboard indicator with equity curve, P&L, summary stats, per-symbol breakdown
+  ├─ Gate: Phase 3 gates (50%, 1.5, 2%) displayed correctly in live trading
+  ├─ 3 plans (05-01, 05-02, 05-03) ready for execution
+  ├─ Runs parallel with Phase 4 (dashboard on Phase 4 live trading data)
+  └─ Completes: Trader visibility into live performance
+  
+Phase 4 (4 weeks) [NOT YET PLANNED]
   ├─ Deliverable: 30 days live trading, zero errors
   ├─ Gate: Live metrics ≈ backtest ±20%
   └─ Completes: v1 MVP
   
-Total: 10-11 weeks (5-6 weeks minimum with no rework)
+Total: 10-12 weeks (5-6 weeks minimum with no rework)
 ```
 
 ---
 
 ## Architecture Alignment
 
-Phase 2 implements items 3-7 from the build sequence:
+Phase 5 provides visualization for Phases 1-4:
 
-1. **Data Structures** (Phase 1 - 01-01): Arrays, structs for profiles/signals/positions ✅
-2. **Volume Profile Engine** (Phase 1 - 01-01): 400-bin, POC/VAH/VAL, HVN/LVN detection ✅
-3. **Signal Detection** (Phase 2 - 02-02): Setup 1 & 2 logic with balanced/imbalanced market context ✅
-4. **Trade Execution** (Phase 2 - 02-03): CTrade order placement, slippage validation, position tracking ✅
-5. **Risk Management** (Phase 1 - 01-02 + Phase 2 - 02-04): Position sizing, daily limits, SL/TP placement ✅
-6. **Error Handling** (Phase 2 - 02-04): Order rejection logging, retry logic, connectivity checks ✅
-7. **Main Event Loop** (Phase 2 - 02-04): OnTick orchestration with signal detection → order placement → exit monitoring ✅
+1. **Data Structures** (Phase 1 - 01-01): Arrays, structs ✅
+2. **Volume Profile Engine** (Phase 1 - 01-01): 400-bin, POC/VAH/VAL, HVN/LVN ✅
+3. **Signal Detection** (Phase 2 - 02-02): Setup 1 & 2 logic ✅
+4. **Trade Execution** (Phase 2 - 02-03): Order placement, position tracking ✅
+5. **Risk Management** (Phase 1-2): Position sizing, daily limits ✅
+6. **Error Handling** (Phase 2 - 02-04): Logging, connectivity checks ✅
+7. **Main Event Loop** (Phase 2 - 02-04): OnTick orchestration ✅
+8. **Backtesting Validation** (Phase 3): Historical performance gates ✅
+9. **Live Monitoring Dashboard** (Phase 5) — NEW: Real-time equity, P&L, metrics, per-symbol breakdown ✅
 
 ---
 
@@ -195,9 +255,11 @@ Phase 2 implements items 3-7 from the build sequence:
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0 | 2026-05-13 | Phase 1 & Phase 2 planning complete; 7 plans total ready for execution (4 Phase 2 plans: refactoring, signal detection, order execution, risk control & logging) |
+| 1.0 | 2026-05-13 | Phase 1 & Phase 2 planning complete; 7 plans total ready for execution |
+| 1.1 | 2026-05-13 | Phase 3 planning complete; 4 backtesting plans added (03-01 through 03-04) |
+| 1.2 | 2026-05-13 | Phase 5 planning complete; 3 dashboard plans added (05-01 through 05-03); Phase 4 deferred pending Phase 3 execution |
 
 ---
 
 *Roadmap updated: 2026-05-13*  
-*Status: Phase 2 Planning Complete — Ready for Phase 1 Execution*
+*Status: Phase 5 Planning Complete — 11 total plans ready for execution (Phases 1-3, 5)*
