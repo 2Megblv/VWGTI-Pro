@@ -59,3 +59,79 @@ int OnInit()
 
     return(INIT_SUCCEEDED);
 }
+
+//+------------------------------------------------------------------+
+//| Custom indicator iteration function (OnCalculate)                |
+//|                                                                  |
+//| D-06: Bar-close refresh cadence                                  |
+//| Called once per tick; detects bar close and updates once per bar |
+//+------------------------------------------------------------------+
+
+int OnCalculate(const int rates_total,
+                const int prev_calculated,
+                const datetime &time[],
+                const double &open[],
+                const double &high[],
+                const double &low[],
+                const double &close[],
+                const long &tick_volume[],
+                const long &volume[],
+                const int &spread[])
+{
+    // CRITICAL: Bar-close detection (D-06 pattern from RESEARCH.md Pattern 1)
+    // Only update dashboard when new bar completes, not every tick
+
+    if (time[0] != g_lastBarTime)
+    {
+        // New bar detected; update dashboard
+        g_lastBarTime = time[0];
+        UpdateDashboard();
+    }
+
+    return(rates_total);  // Return total number of bars processed
+}
+
+//+------------------------------------------------------------------+
+//| Update Dashboard (called once per completed bar)                 |
+//|                                                                  |
+//| Sequence:                                                        |
+//|   1. Refresh all metrics via Dashboard.mqh functions             |
+//|   2. Format metrics for display                                  |
+//|   3. Prepare data for ChartObject rendering (Plan 03)            |
+//+------------------------------------------------------------------+
+
+void UpdateDashboard()
+{
+    // Step 1: Refresh all dashboard metrics (single master function call)
+    RefreshDashboardMetrics(g_metrics);
+
+    // Step 2: Log current state to MT5 Journal (optional, for debugging)
+    LogDashboardState();
+
+    // Step 3: Update ChartObjects (handled in Plan 03)
+    // For now, just signal that data is ready
+    // ChartObjects will be created/updated in RenderDashboard() (Plan 03)
+}
+
+//+------------------------------------------------------------------+
+//| Log Dashboard State (debug/audit trail)                          |
+//+------------------------------------------------------------------+
+
+void LogDashboardState()
+{
+    string msg = StringFormat(
+        "Dashboard Update | Time=%s | Equity=%.2f | "
+        "Trades=%d (Win=%.1f%%) | PF=%.2f | MaxDD=%.2f%% | "
+        "XAUUSD=%d | EURUSD=%d",
+        TimeToString(TimeCurrent()),
+        g_metrics.currentEquity,
+        g_metrics.totalTrades,
+        g_metrics.winRate * 100,
+        g_metrics.profitFactor,
+        g_metrics.maxDailyDrawdown * 100,
+        g_metrics.symbolXAUUSD_trades,
+        g_metrics.symbolEURUSD_trades
+    );
+
+    Print(msg);  // Output to MT5 Journal
+}
