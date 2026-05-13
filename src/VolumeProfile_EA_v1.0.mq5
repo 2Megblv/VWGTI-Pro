@@ -1352,28 +1352,28 @@ DailyLimitState CalculateDailyPnL()
   datetime sessionStart = GetSessionBoundary();
 
   // Step 1: Scan closed trades from order history
-  // Use OrdersHistoryTotal() to find all completed trades
+  // Use HistoryOrdersTotal() to find all completed trades
 
-  int ordersHistoryCount = OrdersHistoryTotal();
+  int ordersHistoryCount = HistoryOrdersTotal();
   for (int i = 0; i < ordersHistoryCount; i++)
   {
-    ulong ticket = OrderGetTicket(i);
+    ulong ticket = HistoryOrderGetTicket(i);
     if (ticket == 0)
       continue;
 
     // Filter for this EA's trades via magic number
     // Positions API: check if position's magic matches
-    if (OrderGetInteger(ORDER_MAGIC) != EA_MAGIC_NUMBER)
+    if (HistoryOrderGetInteger(ticket, ORDER_MAGIC) != EA_MAGIC_NUMBER)
       continue;
 
     // Only include trades closed in current session
-    datetime closeTime = (datetime)OrderGetInteger(ORDER_TIME_DONE);
+    datetime closeTime = (datetime)HistoryOrderGetInteger(ticket, ORDER_TIME_DONE);
     if (closeTime == 0 || closeTime < sessionStart)
       continue;
 
     // Add profit from this closed position
     // In MT5, profit is in account currency
-    double profit = OrderGetDouble(ORDER_NET_PROFIT);
+    double profit = HistoryOrderGetDouble(ticket, ORDER_PROFIT);
     result.closedPnL += profit;
   }
 
