@@ -1075,8 +1075,8 @@ OrderResult PlaceMarketOrder(ENUM_ORDER_TYPE orderType, double lots,
                 LogError(StringFormat("Slippage exceeds limit (%.1f pips > %d pips). Closing position ticket=%lld",
                                     slippagePips, SLIPPAGE_LIMIT, result.ticket));
 
-                // Close the position using MT5 PositionClose
-                PositionClose(result.ticket);
+                // Close the position using CTrade
+                trade.PositionClose(result.ticket);
 
                 result.success = false;
                 result.slippage = slippagePips;
@@ -1263,14 +1263,14 @@ void ClosePosition(long ticket, double exitPrice, string exitReason, double clos
     if (!pos.isLong)
         pnlPips = (pos.entryPrice - exitPrice) / Point();  // SHORT P&L inverted
 
-    // Close position via native MT5 API
+    // Close position via CTrade
     if (!PositionSelect(ticket))
     {
         LogError(StringFormat("Failed to select position ticket=%ld", ticket));
         return;
     }
 
-    bool closed = PositionClose(ticket);
+    bool closed = trade.PositionClose(ticket);
 
     if (closed)
     {
@@ -1342,31 +1342,31 @@ DailyLimitState CalculateDailyPnL()
   // Get session boundary (today's open in broker server time)
   datetime sessionStart = GetSessionBoundary();
 
-  // Step 1: Scan closed trades from order history
-  // Use HistoryOrdersTotal() to find all completed trades
+  // Step 1: Scan closed trades from deal history
+  // Use HistoryDealsTotal() to find all completed trades
 
-  // Note: HistorySelect must be called to access order history
-  int ordersHistoryCount = HistoryOrdersTotal();
-  for (int i = 0; i < ordersHistoryCount; i++)
+  // Note: HistorySelect must be called to access deal history
+  int dealsHistoryCount = HistoryDealsTotal();
+  for (int i = 0; i < dealsHistoryCount; i++)
   {
-    ulong ticket = HistoryOrderGetTicket(i);
+    ulong ticket = HistoryDealGetTicket(i);
     if (ticket <= 0)
       continue;
 
     // Filter for this EA's trades via magic number
-    long orderMagic = HistoryOrderGetInteger(ticket, ORDER_MAGIC);
-    if (orderMagic != EA_MAGIC_NUMBER)
+    long dealMagic = HistoryDealGetInteger(ticket, DEAL_MAGIC);
+    if (dealMagic != EA_MAGIC_NUMBER)
       continue;
 
     // Only include trades closed in current session
-    long closeTime = HistoryOrderGetInteger(ticket, ORDER_TIME_DONE);
+    long closeTime = HistoryDealGetInteger(ticket, DEAL_TIME);
     if (closeTime == 0 || closeTime < (long)sessionStart)
       continue;
 
     // Add profit from this closed position
-    // In MT5, use HistoryOrderGetDouble with ORDER_PROPERTY_PROFIT property
-    double orderProfit = HistoryOrderGetDouble(ticket, ORDER_PROPERTY_PROFIT);
-    result.closedPnL += orderProfit;
+    // In MT5, use HistoryDealGetDouble with DEAL_PROFIT property
+    double dealProfit = HistoryDealGetDouble(ticket, DEAL_PROFIT);
+    result.closedPnL += dealProfit;
   }
 
   // Step 2: Scan open positions for current P&L
@@ -1430,10 +1430,10 @@ bool EnforceDailyLimits()
     // Force-close ALL open positions immediately
     for (int i = positionCount - 1; i >= 0; i--)
     {
-      // Use native MT5 PositionClose to close
+      // Use CTrade to close
       if (PositionSelect(positions[i].ticket))
       {
-        PositionClose(positions[i].ticket);
+        trade.PositionClose(positions[i].ticket);
       }
       ClosePosition(positions[i].ticket, SymbolInfoDouble(Symbol(), SYMBOL_BID),
                    "HARD_STOP", positions[i].remainingLots);
@@ -1462,7 +1462,7 @@ bool EnforceDailyLimits()
     {
       if (PositionSelect(positions[i].ticket))
       {
-        PositionClose(positions[i].ticket);
+        trade.PositionClose(positions[i].ticket);
       }
       ClosePosition(positions[i].ticket, SymbolInfoDouble(Symbol(), SYMBOL_BID),
                    "PROFIT_CAP_CLOSE", positions[i].remainingLots);
@@ -1478,10 +1478,10 @@ bool EnforceDailyLimits()
       else
         newSL -= 5 * Point();  // -5 pips for SHORT
 
-      // Update position SL via native MT5 PositionModify
+      // Update position SL via CTrade
       if (PositionSelect(positions[i].ticket))
       {
-        if (PositionModify(positions[i].ticket, newSL, positions[i].takeProfit))
+        if (trade.PositionModify(positions[i].ticket, newSL, positions[i].takeProfit))
         {
           positions[i].stopLoss = newSL;
         }
@@ -1533,7 +1533,7 @@ bool CheckFridayHardClose()
     {
       if (PositionSelect(positions[i].ticket))
       {
-        PositionClose(positions[i].ticket);
+        trade.PositionClose(positions[i].ticket);
       }
       ClosePosition(positions[i].ticket, SymbolInfoDouble(Symbol(), SYMBOL_BID),
                    "FRIDAY_CLOSE", positions[i].remainingLots);
@@ -1814,14 +1814,14 @@ bool ExecutePositionFlip(long oldTicket, bool newLongEntry, double newEntryPrice
     return false;
   }
 
-  // Select and close position via native MT5 API
+  // Select and close position via CTrade
   if (!PositionSelect(oldTicket))
   {
     LogError(StringFormat("Failed to select position %lld for flip.", oldTicket));
     return false;
   }
 
-  if (!PositionClose(oldTicket))
+  if (!trade.PositionClose(oldTicket))
   {
     LogError(StringFormat("Failed to close position %lld for flip. Error: %d",
                          oldTicket, GetLastError()));
