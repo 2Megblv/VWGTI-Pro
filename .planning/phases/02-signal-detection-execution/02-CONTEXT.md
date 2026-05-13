@@ -16,15 +16,17 @@ This phase delivers end-to-end trade execution for both entry setups (Setup 1: 8
 **In Scope:**
 - Setup 1 (80% Rule) detection: balanced market identification, gap detection, reclaim detection, confirmation candle validation, entry execution
 - Setup 2 (HVN Edge) detection: LVN sweep detection, HVN edge identification, trigger pattern recognition (Hammer/Shooting Star/Doji), volume spike confirmation (≥1.3x)
-- Entry order placement for both setups with 50-pip slippage rejection
-- Full edge-to-edge TP targeting (opposite profile boundary) for both setups
+- **Multi-Timeframe Context:** Load 15M profile (VAH/VAL/PoC) to validate direction bias before entry
+- **Session Filtering:** Block entries during grave hour (NY close 16:00–17:00) and pre-Tokyo (23:00 Sun–00:00 Mon); check liquidity/spread thresholds before each entry
+- Entry order placement for both setups with 50-pip slippage rejection + pre-trade spread validation
+- Full edge-to-edge TP targeting (opposite profile boundary) for both setups; position runs to full TP (no partial TP exits)
 - Stop loss placement (below sweep low for Setup 1, below LVN for Setup 2)
-- Partial position management: 50-70% close at daily profit cap with SL adjustment, remainder runs to TP
+- Position management: Full position rides to TP; daily profit cap (+5%) closes positions to protect gains, moves SL to profit
 - Daily hard stop (-2%) enforcement: force-close all positions + stop trading
-- Daily profit cap (+5%) enforcement: close partial positions, move SL to profit, let remainder run
+- Reversal exit & position flip: Detect 5M reversal candles + 1M confirmation; if logic allows and opposite Setup 1/2 signal forms, close current position + enter reversal trade
 - Friday hard close (21:45) execution
 - Market context switching: intelligently select Setup 1 (balanced) vs Setup 2 (imbalanced) based on VA width
-- Full audit journal logging: entry details, setup type, exit details, P&L, risk/reward, slippage tracking
+- Full audit journal logging: entry details, setup type, exit details, P&L, risk/reward, slippage tracking, reversal trades
 - Order rejection error handling with logging
 
 **Out of Scope (Phase 3+):**
@@ -126,13 +128,38 @@ This phase delivers end-to-end trade execution for both entry setups (Setup 1: 8
 - **Retry Logic:** Recommended: exponential backoff (retry at next tick, then +1 tick, then +2 ticks, etc.) up to 3 attempts if signal still valid.
 - **Downstream Impact:** Operational visibility. No silent failures.
 
+### Multi-Timeframe Execution Enhancement
+
+**D-14: Multi-Timeframe Context & Session Filtering**
+- **Approach:** 
+  - Load and track 15M profile (VAH, VAL, PoC) as higher-timeframe context for direction bias
+  - Full 24/5 trading operation BUT block entries during:
+    - **Grave Hour (NY Close):** 16:00–17:00 NY time (low liquidity, high volatility before close)
+    - **Pre-Tokyo Open:** 23:00 Sunday NY time through 00:00 Monday NY time (minimal liquidity, wide spreads)
+  - Before each entry, validate:
+    - Bid-Ask spread ≤ 3 pips (Gold), ≤ 5 pips (EURUSD) — reject if wider
+    - Tick volume ≥ 10 (minimum liquidity threshold)
+- **Rationale:** 15M context prevents counter-trend entries; session filtering avoids grave hour volatility and pre-Tokyo liquidity gaps. Spread/volume checks prevent slippage surprises.
+- **Downstream Impact:** Higher-conviction entries, reduced whipsaw risk during low-liquidity periods.
+
+**D-15: Reversal Exit & Position Flip Logic**
+- **Approach:** In addition to normal TP/SL exits, monitor for reversal opportunity:
+  1. **5M Reversal Detection:** Identify reversal candle at TP level (e.g., lower high after LONG reaches VAH, higher low after SHORT reaches VAL)
+  2. **1M Confirmation:** Wait for 1M structure confirmation (break of recent high/low in opposite direction)
+  3. **Position Flip:** If both conditions met AND matching Setup 1 or Setup 2 signal forms in opposite direction → Close current position + Enter new position (opposite side) at confirmed signal
+  4. **Risk:** New reversal trade subject to same SL/TP logic as original entry
+- **Rationale:** Captures extended moves by flipping at reversals; allows EA to trade both directions within same market cycle. Reduces "opportunity cost" of closed positions.
+- **Exit vs. Flip Decision:** If reversal signal is weak or trade P&L already >+100 pips, close instead of flip. Flip only when signal strength high and move still has energy.
+- **Downstream Impact:** Potential to capture larger market moves; more trades per market cycle; higher capital efficiency.
+
 ### Claude's Discretion
 
 - **Balanced Market Threshold Tuning:** Exact value within 0.6–0.7 range may shift during backtest. Reasonable engineering choice.
 - **Retry Logic Detail:** Backoff frequency, max attempts, timeout conditions if signal validity expires.
-- **Partial Close Percentage:** 50–70% range for D-10. Exact percentage to optimize for win rate / profit factor during implementation.
 - **SL Adjustment Formula:** When moving SL into profit (D-10), exact formula (breakeven vs. +5–10 pips) reasonable engineering choice.
 - **Pattern Threshold Details:** Exact Hammer/Shooting Star/Doji body/wick ratios (e.g., wick >2x body) to be defined during implementation.
+- **Spread Thresholds (D-14):** Spread limits (3 pips Gold, 5 pips EURUSD) may be adjusted based on broker liquidity. Minimum tick volume of 10 is conservative; can be lowered if tighter entry requirements desired.
+- **Reversal Flip Decision (D-15):** Decision to flip vs. close at reversal should consider: current P&L (close if already profitable >100 pips), signal strength (flip only if high-conviction Setup 1 or 2), market momentum. Leave exact thresholds to executor judgment during backtest.
 
 </decisions>
 
