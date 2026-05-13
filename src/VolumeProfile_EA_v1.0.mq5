@@ -1374,8 +1374,8 @@ DailyLimitState CalculateDailyPnL()
 
     // Add profit from this closed position
     // In MT5, profit is in account currency
-    double profit = 0;
-    if (HistoryOrderGetDouble(ticket, ORDER_PROFIT, profit))
+    double profit = HistoryOrderGetDouble(ticket, ORDER_PROPERTY_PROFIT);
+    if (profit != 0 || HistoryOrderGetInteger(ticket, ORDER_TYPE) >= 0)
         result.closedPnL += profit;
   }
 
@@ -2184,7 +2184,7 @@ void OnTick()
 //+------------------------------------------------------------------+
 //| Expert deinitialization function                                 |
 //+------------------------------------------------------------------+
-void OnDeinit(int reason)
+void OnDeinit(const int reason)
 {
     // Cleanup
     Print("EA Deinit - Reason: ", reason);
