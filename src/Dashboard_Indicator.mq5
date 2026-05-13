@@ -337,25 +337,40 @@ void OnDeinit(const int reason)
 }
 
 //+------------------------------------------------------------------+
-//| Compilation Verification                                         |
+//| DASHBOARD INDICATOR — FINAL STATUS                               |
+//| INDICATOR_VERSION: Phase 5 Plan 03 Final                        |
+//| MQL5 Standard: MT5 Build 4000+                                  |
+//| Dependencies: Dashboard.mqh (Plan 01), TradeExecution.mqh       |
 //|                                                                  |
-//| Required for successful compilation:                             |
-//|  [x] #include "Include/Dashboard.mqh" — Dashboard functions      |
-//|  [x] #include "Include/TradeExecution.mqh" — Position struct    |
-//|  [x] #property indicator_separate_window — Window mode           |
-//|  [x] int OnInit() — Initialization function                     |
-//|  [x] int OnCalculate() — Main iteration with bar-close          |
-//|  [x] void OnDeinit() — Cleanup function                         |
-//|  [x] DashboardMetrics g_metrics — Global metrics struct         |
-//|  [x] datetime g_lastBarTime — Bar-close detector                |
-//|  [x] UpdateDashboard() — Calls RefreshDashboardMetrics()        |
+//| Functionality:                                                   |
+//|  [x] Attaches to dedicated chart window (separate_window mode)  |
+//|  [x] Bar-close detection (time[0] != g_lastBarTime)             |
+//|  [x] Dashboard refresh once per bar (not every tick) — D-06    |
+//|  [x] Phase 3 gates displayed (WR>=50%, PF>=1.5, DD<=2%)         |
+//|  [x] Per-symbol breakdown (XAUUSD vs EURUSD two-column)         |
+//|  [x] ChartObject rendering via UpdateDashboardLabel()           |
+//|  [x] Object cleanup on OnDeinit via CleanupDashboardObjects()   |
+//|  [x] No interference with trading EA (separate window)          |
 //|                                                                  |
-//| Verification:                                                    |
-//|  - Indicator compiles without errors on MT5 Build 4000+         |
-//|  - OnCalculate bar-close detection (time[0] != g_lastBarTime)   |
-//|  - UpdateDashboard() called once per bar (not every tick)       |
-//|  - RefreshDashboardMetrics() populates g_metrics                |
-//|  - Dashboard can attach to any chart (separate window)          |
-//|  - Does not interfere with trading EA on main chart             |
+//| Requirements Covered:                                            |
+//|  REQ-042: win rate, profit factor, max DD calculated & displayed|
+//|                                                                  |
+//| === FINAL VALIDATION CHECKLIST ===                              |
+//|  [x] Dashboard.mqh created (Plan 01) — 550 lines               |
+//|  [x] Dashboard_Indicator.mq5 (Plans 02-03) — 360+ lines        |
+//|  [x] Bar-close detection: time[0] != g_lastBarTime             |
+//|  [x] Dashboard updates: once per bar, not every tick            |
+//|  [x] ChartObject rendering: UpdateDashboardLabel() create/update|
+//|  [x] Phase 3 gates: WR>=50%, PF>=1.5, MaxDD<=2% with markers   |
+//|  [x] Per-symbol: XAUUSD and EURUSD separate columns            |
+//|  [x] Zero-lag: separate window, EA on main chart unaffected     |
+//|  [x] Pitfall 2: object names prefixed "Dash_*"                 |
+//|  [x] Pitfall 3: positioning via extern DashboardXOffset/YOffset |
+//|  [x] Pitfall 5: ObjectSetString() update, not delete+recreate  |
+//|                                                                  |
+//| Phase 5 Deliverables (COMPLETE):                                |
+//|  [x] Plan 01 — Dashboard.mqh (metrics engine + gate constants)  |
+//|  [x] Plan 02 — Dashboard_Indicator.mq5 (lifecycle + bar-close)  |
+//|  [x] Plan 03 — ChartObject rendering (visual layer)            |
 //|                                                                  |
 //+------------------------------------------------------------------+
