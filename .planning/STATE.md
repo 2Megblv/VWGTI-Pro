@@ -39,11 +39,9 @@ progress:
 
 ## Current Position
 
-Phase: 01 (volume-profile-core) — EXECUTING
-Plan: 1 of 3
-**Phase:** 3
+**Phase:** 3 (backtesting-validation)
 **Current Plan:** Not started
-**Focus:** Phase 1 — Volume Profile Core implementation  
+**Focus:** Phase 3 — Backtesting & Validation context captured; ready for planning  
 
 **Progress Metrics:**
 
@@ -114,6 +112,18 @@ Phase 4 Target: 4 weeks
 | **D-04: Code Organization** | Single .mq5 file Phase 1, modular refactor before Phase 2 | ✅ Locked |
 | **D-05: Testing Strategy** | Embedded unit tests + manual backtest validation (90%+ coverage) | ✅ Locked |
 
+### Phase 3 Implementation Decisions (LOCKED - 2026-05-13)
+
+| Decision | Approach | Status |
+|----------|----------|--------|
+| **D-01: Historical Period** | Two separate 1-year backtests (2024 and 2025) for regime robustness | ✅ Locked |
+| **D-02: Backtest Mode** | MT5 native with real tick data (Every Tick) for accuracy | ✅ Locked |
+| **D-03: Success Gates** | Hard gates: 50% WR, 1.5 PF, 2% DD (BOTH 2024 and 2025 must independently meet) | ✅ Locked |
+| **D-04: Failed Gate Handling** | Stop and diagnose Phase 2 code if either year fails any metric | ✅ Locked |
+| **D-05: Data Source** | Broker's built-in history (MT5 download) + manual spot-check verification | ✅ Locked |
+| **D-06: Trade Validation** | MT5 Journal auto-categorizes by setup type; 50+ Setup 1 AND 50+ Setup 2 required | ✅ Locked |
+| **D-07: Regime Robustness** | Both years must independently meet all gates; no single-year pass | ✅ Locked |
+
 ### Architecture Foundations (VALIDATED)
 
 **Technology Stack:**
@@ -162,46 +172,45 @@ Phase 4 (Live Deployment)
 
 ## Todos & Decisions
 
-### Phase 1 Planning (Next: `/gsd-plan-phase 1`)
+### Phase 3 Context Gathered (2026-05-13)
 
-- [ ] Create detailed Phase 1 plan
-  - Break Phase 1 into 7 sub-tasks (data structures, profile engine, etc.)
-  - Define acceptance criteria for each sub-task
-  - Identify unit tests needed (profile accuracy, daily limits enforcement)
-  - Estimate time per sub-task
-- [ ] Prepare Phase 1 scaffold
-  - Set up MQL5 project structure
-  - Create empty class/function stubs matching architecture
-  - Configure MT5 build environment
-- [ ] Define Phase 1 verification gates
-  - Profile accuracy unit tests (POC/VAH/VAL within 1 pip)
-  - Daily limit enforcement tests (can't be overridden)
-  - Position sizing formula validation
+**Decisions locked for Phase 3 Backtesting & Validation:**
 
-### Upcoming Decisions (Phase 2+)
+- ✅ **D-01:** Two separate 1-year backtests (2024 and 2025) for regime robustness validation
+- ✅ **D-02:** MT5 native backtest with real tick data (Every Tick mode) for accuracy
+- ✅ **D-03:** Hard success gates (50% WR, 1.5 PF, 2% DD) — BOTH 2024 and 2025 must independently meet all criteria
+- ✅ **D-04:** Failed gate handling — stop and diagnose Phase 2 code if gates not met in either year
+- ✅ **D-05:** Data source — broker's built-in history via MT5 download
+- ✅ **D-06:** Trade validation — MT5 Journal auto-categorizes by setup type (50+ Setup 1 AND 50+ Setup 2 required per year)
+- ✅ **D-07:** Regime robustness — if 2024 hits but 2025 doesn't (or vice versa), return to Phase 2 to fix code
 
-- [ ] **Phase 2 start:** When is Phase 1 unit test coverage ≥90%? (trigger Phase 2 planning)
-- [ ] **Phase 3 backtest:** Which 1-year historical period? (2023-2024, 2024-2025, 2025-2026?)
+**Next:** `/gsd-plan-phase 3` to create backtesting execution plan
+
+### Upcoming Decisions (Phase 4+)
+
 - [ ] **Phase 4 live:** Account size? ($500, $1K, $5K?) and broker selection?
+- [ ] **Phase 4 deployment:** Monitoring dashboard requirements? Alert conditions?
 
 ### Session Continuity
 
-**Last Session:** 2026-05-12T23:36:21.079Z
+**Last Session:** 2026-05-13T12:00:00Z (Phase 3 Context Discussion)
 
 **Session Handoff:**
 
-- Phase 1 context captured in `.planning/phases/01-volume-profile-core/01-CONTEXT.md`
-- 5 implementation decisions locked (volume proration, HVN/LVN detection, risk params, code org, testing)
-- Discussion log created for audit trail (.planning/phases/01-volume-profile-core/01-DISCUSSION-LOG.md)
-- No blockers identified; ready for Phase 1 planning
-- Next action: `/gsd-plan-phase 1` to decompose Phase 1 into executable tasks
+- Phase 3 context captured in `.planning/phases/03-backtesting-validation/03-CONTEXT.md`
+- 7 implementation decisions locked (historical period, backtest mode, success gates, failed gate handling, data source, trade validation, regime robustness)
+- Discussion log created for audit trail (`.planning/phases/03-backtesting-validation/03-DISCUSSION-LOG.md`)
+- Phase 3 success gates locked: 50% WR, 1.5 PF, 2% DD (BOTH 2024 and 2025 must independently meet)
+- No blockers identified; ready for Phase 3 planning
+- Next action: `/gsd-plan-phase 3` to create backtesting execution plan
 
 **Context to Preserve:**
 
 - Architecture is locked (modular, zero-lag, no visual objects)
 - Risk framework is locked (0.6%, -2% hard stop, +5% profit cap)
 - Volume Profile methodology is locked (400-bin, 70% VA, HVN/LVN detection)
-- Phase 1 implementation decisions locked (see CONTEXT.md)
+- Phase 1 & 2 implementation decisions locked (see respective CONTEXT.md files)
+- Phase 3 backtest approach locked: two separate 1-year backtests (2024 + 2025), MT5 native, hard gates
 - All major decisions in this STATE.md and phase-specific CONTEXT.md files for reference
 
 ---
