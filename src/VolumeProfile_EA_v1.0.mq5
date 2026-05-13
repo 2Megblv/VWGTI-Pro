@@ -25,7 +25,6 @@
 #property link      "https://github.com/sgunamijaya/VWGTI-Pro"
 #property version   "2.0"
 #property strict
-#property icon      "\\Images\\EarnForex\\forex.ico"
 
 // ==================== TRADE.MQH IMPORT ====================
 
