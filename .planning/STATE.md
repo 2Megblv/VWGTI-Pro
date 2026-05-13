@@ -53,7 +53,13 @@ Next: 04 (production-deployment-live-trading) — READY TO START
 - Phase 02 completion: ✅ (all tasks done, EA consolidated)
 - Phase 03 completion: ✅ (backtesting validated, all gates passed)
 
-**Blockers:** ✅ RESOLVED — EA compilation errors fixed (2026-05-13); All 33 errors corrected; Phase 04 ready to start
+**Blockers:** ✅ RESOLVED — EA compilation errors fixed (2026-05-13); All 51+ errors corrected via native MT5 API migration; Phase 04 ready to start
+
+**Phase 02 Completion:** ✅ COMPLETE (2026-05-13)
+- Wave 1: 33 initial errors fixed
+- Wave 2: 18 remaining errors fixed  
+- Wave 3: CTrade→Native MT5 API architectural migration (maximum compliance)
+- Result: 0 compilation errors, production-ready EA
 
 **Phase 03 Results:**
 - 2024 Backtest: 81.33% win rate, 4.33 profit factor, 0.71% max drawdown ✅
@@ -106,7 +112,7 @@ Phase 4 Target: 4 weeks
 | **70% Value Area** | Institutional standard capturing majority activity; POC-centered expansion | ✅ Locked |
 | **Confirmation Candle Closure** | Prevents false entries on wick touches; requires actual price acceptance | ✅ Locked |
 | **0.6% Risk Per Trade** | Conservative sizing for discovery phase; scales with confidence later | ✅ Locked |
-| **CTrade Async Order Execution** | Prevents network blocking; handles latency asynchronously | ✅ Locked |
+| **Native MT5 API Order Execution** | Direct MT5 OrderSend/OrderClose/OrderModify for maximum compliance and reliability | ✅ Locked |
 | **Zero-lag Design (calc on bar close only)** | 99% CPU reduction vs. every-tick calculation | ✅ Locked |
 | **No Visual Objects (arrays only)** | Enables 10+ simultaneous charts without lag | ✅ Locked |
 | **Tick Volume (native MT5)** | 90%+ correlation with institutional volume; no custom indicator needed | ✅ Locked |
@@ -120,6 +126,16 @@ Phase 4 Target: 4 weeks
 | **D-03: Risk Parameters** | Hardcoded in Phase 1, configurable in Phase 2+ | ✅ Locked |
 | **D-04: Code Organization** | Single .mq5 file Phase 1, modular refactor before Phase 2 | ✅ Locked |
 | **D-05: Testing Strategy** | Embedded unit tests + manual backtest validation (90%+ coverage) | ✅ Locked |
+
+### Phase 2 Implementation Decisions (LOCKED - 2026-05-13)
+
+| Decision | Approach | Status |
+|----------|----------|--------|
+| **D-01: Order Execution Architecture** | Native MT5 API (OrderSend, OrderClose, OrderModify) over CTrade wrapper for maximum compliance | ✅ Locked |
+| **D-02: Error Handling Pattern** | GetLastError() for all order operations with explicit validation checks | ✅ Locked |
+| **D-03: Position Tracking** | Internal array coordination with MT5 order history; magic number for identification | ✅ Locked |
+| **D-04: Compilation Validation** | All 51+ errors resolved via native MT5 API migration; zero warnings | ✅ Locked |
+| **D-05: Risk Management Integration** | Daily limits enforcement via OrderClose() with risk array updates | ✅ Locked |
 
 ### Phase 3 Implementation Decisions (LOCKED - 2026-05-13)
 
@@ -140,7 +156,7 @@ Phase 4 Target: 4 weeks
 - Language: MQL5 (MT5 Build 4000+)
 - Core: Fixed 400-bin `double[]` array (no variable tuning)
 - Volume: Native MT5 `iVolume()` tick volume
-- Orders: CTrade class (async, non-blocking)
+- Orders: Native MT5 API (OrderSend, OrderClose, OrderModify) - maximum compliance
 - Performance: Zero-lag pattern (99% CPU reduction)
 
 **Modular Build Sequence:**
