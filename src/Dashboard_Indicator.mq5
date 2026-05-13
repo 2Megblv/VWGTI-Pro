@@ -35,8 +35,8 @@ DashboardMetrics g_metrics;                    // Master metrics struct
 static datetime g_lastBarTime = 0;             // Bar-close detection
 static bool g_initialized = false;             // Initialization flag
 
-extern int DashboardXOffset = 50;              // Panel X position (pixels from left)
-extern int DashboardYOffset = 100;             // Panel Y position (pixels from top)
+input int DashboardXOffset = 50;               // Panel X position (pixels from left)
+input int DashboardYOffset = 100;              // Panel Y position (pixels from top)
 
 //+------------------------------------------------------------------+
 //| Custom indicator initialization function (OnInit)                |

@@ -86,29 +86,7 @@ void LogOrderRejection(double intendedPrice, double stopLoss, double takeProfit,
   Print(logMsg);  // Output to MT5 Journal
 }
 
-//+------------------------------------------------------------------+
-//| Log Alert
-//| Logs important alerts: hard stop, profit cap, Friday close, etc.
-//+------------------------------------------------------------------+
-
-void LogAlert(string alertType, string message)
-{
-  string logMsg = StringFormat("%s | ALERT | %s | %s",
-                              TimeToString(TimeCurrent()), alertType, message);
-  Print(logMsg);  // Output to MT5 Journal
-}
-
-//+------------------------------------------------------------------+
-//| Log Error
-//| Logs errors: connection loss, position close failure, etc.
-//+------------------------------------------------------------------+
-
-void LogError(string message)
-{
-  string logMsg = StringFormat("%s | ERROR | %s",
-                              TimeToString(TimeCurrent()), message);
-  Print(logMsg);  // Output to MT5 Journal
-}
+// LogAlert() and LogError() are defined in Utils.mqh (included above)
 
 //+------------------------------------------------------------------+
 //| Log Reversal Detection

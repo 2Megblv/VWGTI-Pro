@@ -112,7 +112,8 @@ OrderResult PlaceMarketOrder(ENUM_ORDER_TYPE orderType, double lots,
     for (int attempt = 0; attempt < RETRY_ATTEMPTS; attempt++)
     {
         // Prepare trade request
-        MqlTradeRequest request = {0};
+        MqlTradeRequest request;
+        ZeroMemory(request);
         request.action = TRADE_ACTION_DEAL;
         request.symbol = Symbol();
         request.volume = lots;
@@ -124,9 +125,10 @@ OrderResult PlaceMarketOrder(ENUM_ORDER_TYPE orderType, double lots,
         request.magic = EA_MAGIC_NUMBER;
         request.comment = (orderType == ORDER_TYPE_BUY) ? "Setup-LONG" : "Setup-SHORT";
 
-        // Execute via CTrade
-        MqlTradeResult tradeResult = {0};
-        if (!trade.Send(request, tradeResult))
+        // Execute via native OrderSend (CTrade.Send does not exist in MQL5)
+        MqlTradeResult tradeResult;
+        ZeroMemory(tradeResult);
+        if (!OrderSend(request, tradeResult))
         {
             uint retcode = tradeResult.retcode;
             LogError(StringFormat("OrderSend failed. Retcode=%d, Attempt=%d/%d",
@@ -373,7 +375,7 @@ void ClosePosition(long ticket, double exitPrice, string exitReason, double clos
         return;
     }
 
-    PositionState &pos = positions[idx];
+    PositionState pos = positions[idx];  // copy — MQL5 does not allow local references
 
     // Calculate P&L for this trade
     double pnlPips = (exitPrice - pos.entryPrice) / Point;

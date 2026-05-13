@@ -21,10 +21,18 @@
 
 // ==================== CONSTANTS ====================
 
+#ifndef RISK_PERCENT
 #define RISK_PERCENT 0.6        // D-03: hardcoded 0.6% per trade
+#endif
+#ifndef DAILY_LOSS_LIMIT
 #define DAILY_LOSS_LIMIT 0.02   // -2% hard stop
+#endif
+#ifndef DAILY_PROFIT_CAP
 #define DAILY_PROFIT_CAP 0.05   // +5% profit cap
+#endif
+#ifndef FRIDAY_CLOSE_HOUR
 #define FRIDAY_CLOSE_HOUR 21
+#endif
 #define FRIDAY_CLOSE_MIN 45
 
 // ==================== DATA STRUCTURES ====================
