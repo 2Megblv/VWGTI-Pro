@@ -1015,11 +1015,21 @@ OrderResult PlaceMarketOrder(ENUM_ORDER_TYPE orderType, double lots,
     // Retry logic: up to 3 attempts for transient errors
     for (int attempt = 0; attempt < RETRY_ATTEMPTS; attempt++)
     {
-        // Prepare trade request using native MT5 OrderSend
-        ulong ticket = OrderSend(Symbol(), orderType, lots, intendedPrice, 500,
-                                stopLoss, takeProfit, "VP_EA_Trade", EA_MAGIC_NUMBER);
+        // Prepare trade request - correct MT5 API
+        MqlTradeRequest request = {0};
+        request.action = TRADE_ACTION_DEAL;
+        request.symbol = Symbol();
+        request.volume = lots;
+        request.type = orderType;
+        request.price = intendedPrice;
+        request.sl = stopLoss;
+        request.tp = takeProfit;
+        request.deviation = 500;
+        request.magic = EA_MAGIC_NUMBER;
+        request.comment = "VP_EA_Trade";
 
-        if (ticket == 0)
+        MqlTradeResult tradeResult = {0};
+        if (!OrderSend(request, tradeResult))
         {
             uint retcode = GetLastError();
             LogError(StringFormat("OrderSend failed. Retcode=%d, Attempt=%d/%d",
@@ -1037,50 +1047,39 @@ OrderResult PlaceMarketOrder(ENUM_ORDER_TYPE orderType, double lots,
                 return result;
             }
         }
-        else
+
+        // Order executed successfully; get fill price from trade result
+        if (tradeResult.retcode == TRADE_RETCODE_DONE || tradeResult.retcode == TRADE_RETCODE_PLACED)
         {
-            // Order executed successfully; validate slippage
-            result.ticket = ticket;
+            result.ticket = tradeResult.order;
+            result.fillPrice = tradeResult.price;
 
-            // Get filled price from order
-            if (OrderSelect(ticket, SELECT_BY_TICKET))
+            // D-07: Validate slippage (50-pip tolerance)
+            double slippagePips = MathAbs(result.fillPrice - intendedPrice) / Point();
+
+            if (slippagePips <= SLIPPAGE_LIMIT)
             {
-                result.fillPrice = OrderOpenPrice();
+                // Slippage acceptable
+                result.success = true;
+                result.slippage = slippagePips;
 
-                // D-07: Validate slippage (50-pip tolerance)
-                double slippagePips = MathAbs(result.fillPrice - intendedPrice) / Point();
+                LogAlert("ORDER_FILLED",
+                        StringFormat("Ticket=%lld, Price=%.5f, Slippage=%.1f pips, Intent=%.5f",
+                                    result.ticket, result.fillPrice, result.slippage, intendedPrice));
 
-                if (slippagePips <= SLIPPAGE_LIMIT)
-                {
-                    // Slippage acceptable
-                    result.success = true;
-                    result.slippage = slippagePips;
-
-                    LogAlert("ORDER_FILLED",
-                            StringFormat("Ticket=%ld, Price=%.5f, Slippage=%.1f pips, Intent=%.5f",
-                                        result.ticket, result.fillPrice, result.slippage, intendedPrice));
-
-                    return result;
-                }
-                else
-                {
-                    // Slippage exceeds 50 pips; reject and close position immediately
-                    LogError(StringFormat("Slippage exceeds limit (%.1f pips > %d pips). Closing position ticket=%ld",
-                                        slippagePips, SLIPPAGE_LIMIT, result.ticket));
-
-                    // Close the position at market (avoid locking in bad fill)
-                    OrderClose(result.ticket, lots, SymbolInfoDouble(Symbol(), SYMBOL_BID), 50);
-
-                    result.success = false;
-                    result.slippage = slippagePips;
-                    return result;
-                }
+                return result;
             }
             else
             {
-                // OrderSelect failed; log error and return
-                LogError(StringFormat("Failed to select order %lld for price validation", ticket));
+                // Slippage exceeds 50 pips; reject and close position immediately
+                LogError(StringFormat("Slippage exceeds limit (%.1f pips > %d pips). Closing position ticket=%lld",
+                                    slippagePips, SLIPPAGE_LIMIT, result.ticket));
+
+                // Close the position using MT5 PositionClose
+                PositionClose(result.ticket);
+
                 result.success = false;
+                result.slippage = slippagePips;
                 return result;
             }
         }
@@ -1265,7 +1264,13 @@ void ClosePosition(long ticket, double exitPrice, string exitReason, double clos
         pnlPips = (pos.entryPrice - exitPrice) / Point();  // SHORT P&L inverted
 
     // Close position via native MT5 API
-    bool closed = OrderClose(ticket, pos.remainingLots, SymbolInfoDouble(Symbol(), SYMBOL_BID), 50);
+    if (!PositionSelect(ticket))
+    {
+        LogError(StringFormat("Failed to select position ticket=%ld", ticket));
+        return;
+    }
+
+    bool closed = PositionClose(ticket);
 
     if (closed)
     {
@@ -1278,7 +1283,7 @@ void ClosePosition(long ticket, double exitPrice, string exitReason, double clos
     }
     else
     {
-        LogError(StringFormat("Failed to close position ticket=%ld", ticket));
+        LogError(StringFormat("Failed to close position ticket=%ld. Error: %d", ticket, GetLastError()));
     }
 }
 
@@ -1359,8 +1364,8 @@ DailyLimitState CalculateDailyPnL()
       continue;
 
     // Add profit from this closed position
-    // In MT5, use HistoryOrderGetDouble with ORDER_PROFIT property
-    double orderProfit = HistoryOrderGetDouble(ticket, ORDER_PROFIT);
+    // In MT5, use HistoryOrderGetDouble with ORDER_PROPERTY_PROFIT property
+    double orderProfit = HistoryOrderGetDouble(ticket, ORDER_PROPERTY_PROFIT);
     result.closedPnL += orderProfit;
   }
 
@@ -1425,8 +1430,11 @@ bool EnforceDailyLimits()
     // Force-close ALL open positions immediately
     for (int i = positionCount - 1; i >= 0; i--)
     {
-      // Use market order to close
-      OrderClose(positions[i].ticket, positions[i].remainingLots, SymbolInfoDouble(Symbol(), SYMBOL_BID), 50);
+      // Use native MT5 PositionClose to close
+      if (PositionSelect(positions[i].ticket))
+      {
+        PositionClose(positions[i].ticket);
+      }
       ClosePosition(positions[i].ticket, SymbolInfoDouble(Symbol(), SYMBOL_BID),
                    "HARD_STOP", positions[i].remainingLots);
     }
@@ -1452,7 +1460,10 @@ bool EnforceDailyLimits()
 
     for (int i = 0; i < closeCount && i < positionCount; i++)
     {
-      OrderClose(positions[i].ticket, positions[i].remainingLots, SymbolInfoDouble(Symbol(), SYMBOL_BID), 50);
+      if (PositionSelect(positions[i].ticket))
+      {
+        PositionClose(positions[i].ticket);
+      }
       ClosePosition(positions[i].ticket, SymbolInfoDouble(Symbol(), SYMBOL_BID),
                    "PROFIT_CAP_CLOSE", positions[i].remainingLots);
     }
@@ -1467,16 +1478,16 @@ bool EnforceDailyLimits()
       else
         newSL -= 5 * Point();  // -5 pips for SHORT
 
-      // Update position SL via native MT5 OrderModify
-      if (OrderSelect(positions[i].ticket, SELECT_BY_TICKET))
+      // Update position SL via native MT5 PositionModify
+      if (PositionSelect(positions[i].ticket))
       {
-        if (OrderModify(positions[i].ticket, OrderOpenPrice(), newSL, positions[i].takeProfit, 0))
+        if (PositionModify(positions[i].ticket, newSL, positions[i].takeProfit))
         {
           positions[i].stopLoss = newSL;
         }
         else
         {
-          LogError(StringFormat("Failed to modify SL for ticket %d", positions[i].ticket));
+          LogError(StringFormat("Failed to modify SL for ticket %lld. Error: %d", positions[i].ticket, GetLastError()));
         }
       }
     }
@@ -1520,7 +1531,10 @@ bool CheckFridayHardClose()
     // Close all positions
     for (int i = positionCount - 1; i >= 0; i--)
     {
-      OrderClose(positions[i].ticket, positions[i].remainingLots, SymbolInfoDouble(Symbol(), SYMBOL_BID), 50);
+      if (PositionSelect(positions[i].ticket))
+      {
+        PositionClose(positions[i].ticket);
+      }
       ClosePosition(positions[i].ticket, SymbolInfoDouble(Symbol(), SYMBOL_BID),
                    "FRIDAY_CLOSE", positions[i].remainingLots);
     }
@@ -1792,14 +1806,7 @@ bool ExecutePositionFlip(long oldTicket, bool newLongEntry, double newEntryPrice
                          double newStopLoss, double newTakeProfit)
 {
   // Step 1: Close current position
-  // First, get position size before closing
-  if (!OrderSelect(oldTicket, SELECT_BY_TICKET))
-  {
-    LogError(StringFormat("Failed to select position %lld for flip.", oldTicket));
-    return false;
-  }
-
-  double positionLots = OrderTicket() > 0 ? OrderOpenPrice() : 0; // Get from tracking array instead
+  // First, find position in our tracking array
   int idx = FindPositionByTicket(oldTicket);
   if (idx < 0)
   {
@@ -1807,7 +1814,14 @@ bool ExecutePositionFlip(long oldTicket, bool newLongEntry, double newEntryPrice
     return false;
   }
 
-  if (!OrderClose(oldTicket, positions[idx].remainingLots, SymbolInfoDouble(Symbol(), SYMBOL_BID), 50))
+  // Select and close position via native MT5 API
+  if (!PositionSelect(oldTicket))
+  {
+    LogError(StringFormat("Failed to select position %lld for flip.", oldTicket));
+    return false;
+  }
+
+  if (!PositionClose(oldTicket))
   {
     LogError(StringFormat("Failed to close position %lld for flip. Error: %d",
                          oldTicket, GetLastError()));
