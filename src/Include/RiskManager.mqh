@@ -44,14 +44,10 @@
 // Calculate position size based on risk (REQ-029, REQ-030)
 double CalculateLotSize(double entryPrice, double stopLossPrice);
 
-// Recalculate daily P&L by rescanning OrdersHistoryTotal and open positions
-DailyLimitState CalculateDailyPnL();
-
-// Check if hard stop (-2%) or profit cap (+5%) reached; enforce if needed
-bool EnforceDailyLimits();
-
-// Check if Friday 21:45 hard close time reached; force-close all if true
-bool CheckFridayHardClose();
+// NOTE: Daily limit enforcement moved to RiskLimits.mqh:
+//   - CalculateDailyPnL()
+//   - EnforceDailyLimits()
+//   - CheckFridayHardClose()
 
 // ==================== FUNCTION IMPLEMENTATIONS ====================
 
@@ -64,7 +60,7 @@ double CalculateLotSize(double entryPrice, double stopLossPrice)
     // REQ-029: Risk-based sizing formula
 
     // Step 1: Calculate risk amount in account currency
-    double accountBalance = AccountBalance();
+    double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
     double riskAmount = accountBalance * (RISK_PERCENT / 100.0);  // 0.6% locked
 
     if (riskAmount <= 0)
@@ -139,145 +135,8 @@ double CalculateLotSize(double entryPrice, double stopLossPrice)
     return lotSize;
 }
 
-//+------------------------------------------------------------------+
-//| Recalculate daily P&L by rescanning OrdersHistoryTotal and      |
-//| open positions (REQ-032, REQ-033, REQ-035)                      |
-//+------------------------------------------------------------------+
-DailyLimitState CalculateDailyPnL()
-{
-    DailyLimitState state;
-    double closedPnL = 0;
-    double openPnL = 0;
-
-    // Step 1: Scan closed trades today (OrdersHistoryTotal)
-    // Recalculate every call (NOT cached) to ensure persistence across restarts
-
-    int magicNumber = 99001;  // Default; should be passed or globally available
-
-    for (int i = OrdersHistoryTotal() - 1; i >= 0; i--)
-    {
-        if (!OrderSelect(i, SELECT_BY_POS, MODE_HISTORY))
-            continue;
-
-        // Filter for this EA's trades (magic number range)
-        if (OrderMagicNumber() < magicNumber ||
-            OrderMagicNumber() > magicNumber + 10)
-            continue;
-
-        // Check if closed TODAY (within last 24 hours)
-        if (TimeCurrent() - OrderCloseTime() < 86400)
-        {
-            closedPnL += OrderProfit();
-        }
-    }
-
-    // Step 2: Scan open positions for floating P&L
-    // Note: This relies on main EA maintaining a positions[] array
-    // For now, we scan all open orders
-    for (int i = OrdersTotal() - 1; i >= 0; i--)
-    {
-        if (!OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
-            continue;
-
-        if (OrderMagicNumber() < magicNumber ||
-            OrderMagicNumber() > magicNumber + 10)
-            continue;
-
-        openPnL += OrderProfit();
-    }
-
-    // Step 3: Calculate daily total P&L
-    state.closedPnL = closedPnL;
-    state.openPnL = openPnL;
-    state.totalPnL = closedPnL + openPnL;
-    state.hardStopHit = false;
-    state.profitCapReached = false;
-
-    return state;
-}
-
-//+------------------------------------------------------------------+
-//| Check and enforce daily limits (REQ-032, REQ-033, REQ-035)       |
-//| Returns false if hard stop or profit cap hit; blocks new entries |
-//+------------------------------------------------------------------+
-bool EnforceDailyLimits()
-{
-    // REQ-032: Daily hard stop loss at -2%
-    // REQ-033: Daily profit cap at +5%
-    // REQ-035: Drawdown tracking persistent across restarts
-
-    DailyLimitState limits = CalculateDailyPnL();
-    double dailyLossLimit = AccountBalance() * DAILY_LOSS_LIMIT;   // 0.02 = -2%
-    double profitCapLimit = AccountBalance() * DAILY_PROFIT_CAP;   // 0.05 = +5%
-
-    // Step 1: Check if hard stop (-2%) breached
-    if (limits.totalPnL < -dailyLossLimit)
-    {
-        limits.hardStopHit = true;
-
-        LogAlert("HARD_STOP_HIT", StringFormat("closed=%.2f open=%.2f total=%.2f limit=%.2f",
-            limits.closedPnL, limits.openPnL, limits.totalPnL, -dailyLossLimit));
-        Print("WARNING: DAILY_HARD_STOP_HIT");
-        Print("  Current Loss: ", limits.totalPnL, " (Limit: -", dailyLossLimit, ")");
-        Print("  No new trades allowed for remainder of day");
-
-        return false;  // Block new entries
-    }
-
-    // Step 2: Check if profit cap (+5%) breached
-    if (limits.totalPnL > profitCapLimit)
-    {
-        limits.profitCapReached = true;
-
-        Print("WARNING: DAILY_PROFIT_CAP_REACHED");
-        Print("  Current Gain: ", limits.totalPnL, " (Cap: +", profitCapLimit, ")");
-        Print("  All positions will be closed by Phase 2 logic");
-
-        return false;  // Block new entries
-    }
-
-    // Log normal daily limits status periodically
-    static int limitsLogCounter = 0;
-    if (++limitsLogCounter % 100 == 0)
-    {
-        LogAlert("DAILY_LIMITS", StringFormat("closed=%.2f open=%.2f total=%.2f limit=%.2f status=OK",
-            limits.closedPnL, limits.openPnL, limits.totalPnL, -dailyLossLimit));
-    }
-
-    return true;  // Trading allowed
-}
-
-//+------------------------------------------------------------------+
-//| Check if Friday 21:45 hard close time reached (REQ-034)          |
-//| Force close all positions Friday 21:45 broker server time        |
-//+------------------------------------------------------------------+
-bool CheckFridayHardClose()
-{
-    // REQ-034: Force close all positions Friday 21:45 broker server time
-
-    MqlDateTime timeStruct;
-    TimeToStruct(TimeCurrent(), timeStruct);  // Broker server time
-
-    // Friday = day_of_week 5 (0=Sunday, 5=Friday)
-    // Time = 21:45
-
-    if (timeStruct.day_of_week == 5)  // Friday
-    {
-        int currentMinutes = timeStruct.hour * 60 + timeStruct.min;
-        int closeTime = FRIDAY_CLOSE_HOUR * 60 + FRIDAY_CLOSE_MIN;  // 21*60+45 = 1305
-
-        if (currentMinutes >= closeTime)
-        {
-            Print("WARNING: FRIDAY_HARD_CLOSE_TIME");
-            Print("  Current time: ", timeStruct.hour, ":",
-                  (timeStruct.min < 10 ? "0" : ""), timeStruct.min);
-            Print("  All positions must be closed before weekend gap");
-
-            return true;  // Signal to close all positions
-        }
-    }
-
-    return false;  // Not Friday close time
-}
+// NOTE: CalculateDailyPnL(), EnforceDailyLimits(), and CheckFridayHardClose()
+// are implemented in RiskLimits.mqh with proper MT5 Positions API.
+// RiskManager.mqh provides only CalculateLotSize() for position sizing.
 
 #endif  // __RISKMANAGER_MQH__
