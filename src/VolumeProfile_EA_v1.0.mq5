@@ -35,6 +35,9 @@
 #include "Include/SignalDetection.mqh"
 #include "Include/MultiTimeframeContext.mqh"
 #include "Include/TradeExecution.mqh"
+#include "Include/RiskLimits.mqh"
+#include "Include/JournalLogger.mqh"
+#include "Include/ReversalExit.mqh"
 
 // ==================== INPUT PARAMETERS ====================
 
@@ -104,6 +107,9 @@ void OnTick()
 
     // EVERY TICK: Monitor existing positions for exit conditions (Wave 2)
     MonitorPositionExits();
+
+    // EVERY TICK: Monitor for reversals (Wave 3)
+    MonitorReversals();
 
     // Recalculate profile on new bar
     if (NewBar())
