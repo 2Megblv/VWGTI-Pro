@@ -153,11 +153,11 @@ OrderResult PlaceMarketOrder(ENUM_ORDER_TYPE orderType, double lots,
         if (retcode == TRADE_RETCODE_DONE || retcode == TRADE_RETCODE_PLACED)
         {
             // Successful execution; validate slippage
-            result.ticket = tradeResult.order;
+            result.ticket = (long)tradeResult.order;
             result.fillPrice = tradeResult.price;
 
             // D-07: Validate slippage (50-pip tolerance)
-            double slippagePips = MathAbs(result.fillPrice - intendedPrice) / Point;
+            double slippagePips = MathAbs(result.fillPrice - intendedPrice) / _Point;
 
             if (slippagePips <= SLIPPAGE_LIMIT)
             {
@@ -378,9 +378,9 @@ void ClosePosition(long ticket, double exitPrice, string exitReason, double clos
     PositionState pos = positions[idx];  // copy — MQL5 does not allow local references
 
     // Calculate P&L for this trade
-    double pnlPips = (exitPrice - pos.entryPrice) / Point;
+    double pnlPips = (exitPrice - pos.entryPrice) / _Point;
     if (!pos.isLong)
-        pnlPips = (pos.entryPrice - exitPrice) / Point;  // SHORT P&L inverted
+        pnlPips = (pos.entryPrice - exitPrice) / _Point;  // SHORT P&L inverted
 
     // Close position via CTrade
     bool closed = trade.PositionClose(ticket);
@@ -409,8 +409,8 @@ double CalculateRiskRewardRatio(double entryPrice, double stopLossPrice,
 {
     // R:R = (TP distance in pips) / (SL distance in pips)
 
-    double riskDistancePips = MathAbs(entryPrice - stopLossPrice) / Point;
-    double rewardDistancePips = MathAbs(takeProfitPrice - entryPrice) / Point;
+    double riskDistancePips = MathAbs(entryPrice - stopLossPrice) / _Point;
+    double rewardDistancePips = MathAbs(takeProfitPrice - entryPrice) / _Point;
 
     if (riskDistancePips <= 0)
     {

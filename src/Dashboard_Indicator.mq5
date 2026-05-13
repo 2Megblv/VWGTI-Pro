@@ -176,7 +176,7 @@ void UpdateDashboardLabel(long chartId, string objectName, int xDistance, int yD
         ObjectSetInteger(chartId, objectName, OBJPROP_COLOR, textColor);
         ObjectSetInteger(chartId, objectName, OBJPROP_FONTSIZE, fontSize);
         ObjectSetString(chartId, objectName, OBJPROP_FONT, "Arial");
-        ObjectSetInteger(chartId, objectName, OBJPROP_ANCHOR, ANCHOR_LEFT_TOP);
+        ObjectSetInteger(chartId, objectName, OBJPROP_ANCHOR, ANCHOR_LEFT_UPPER);
         ObjectSetInteger(chartId, objectName, OBJPROP_BACK, false);
     }
 }

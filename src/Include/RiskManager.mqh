@@ -78,7 +78,7 @@ double CalculateLotSize(double entryPrice, double stopLossPrice)
     }
 
     // Step 2: Calculate SL distance in pips (broker's point units)
-    double slDistancePoints = MathAbs(entryPrice - stopLossPrice) / Point;
+    double slDistancePoints = MathAbs(entryPrice - stopLossPrice) / _Point;
 
     if (slDistancePoints <= 0)
     {
