@@ -1037,10 +1037,9 @@ OrderResult PlaceMarketOrder(ENUM_ORDER_TYPE orderType, double lots,
                 return result;
             }
         }
-
-        // Order executed successfully
+        else
         {
-            // Successful execution; validate slippage
+            // Order executed successfully; validate slippage
             result.ticket = ticket;
 
             // Get filled price from order
@@ -1048,48 +1047,39 @@ OrderResult PlaceMarketOrder(ENUM_ORDER_TYPE orderType, double lots,
             {
                 result.fillPrice = OrderOpenPrice();
 
-            // D-07: Validate slippage (50-pip tolerance)
-            double slippagePips = MathAbs(result.fillPrice - intendedPrice) / Point();
+                // D-07: Validate slippage (50-pip tolerance)
+                double slippagePips = MathAbs(result.fillPrice - intendedPrice) / Point();
 
-            if (slippagePips <= SLIPPAGE_LIMIT)
-            {
-                // Slippage acceptable
-                result.success = true;
-                result.slippage = slippagePips;
+                if (slippagePips <= SLIPPAGE_LIMIT)
+                {
+                    // Slippage acceptable
+                    result.success = true;
+                    result.slippage = slippagePips;
 
-                LogAlert("ORDER_FILLED",
-                        StringFormat("Ticket=%ld, Price=%.5f, Slippage=%.1f pips, Intent=%.5f",
-                                    result.ticket, result.fillPrice, result.slippage, intendedPrice));
+                    LogAlert("ORDER_FILLED",
+                            StringFormat("Ticket=%ld, Price=%.5f, Slippage=%.1f pips, Intent=%.5f",
+                                        result.ticket, result.fillPrice, result.slippage, intendedPrice));
 
-                return result;
+                    return result;
+                }
+                else
+                {
+                    // Slippage exceeds 50 pips; reject and close position immediately
+                    LogError(StringFormat("Slippage exceeds limit (%.1f pips > %d pips). Closing position ticket=%ld",
+                                        slippagePips, SLIPPAGE_LIMIT, result.ticket));
+
+                    // Close the position at market (avoid locking in bad fill)
+                    OrderClose(result.ticket, lots, SymbolInfoDouble(Symbol(), SYMBOL_BID), 50);
+
+                    result.success = false;
+                    result.slippage = slippagePips;
+                    return result;
+                }
             }
             else
             {
-                // Slippage exceeds 50 pips; reject and close position immediately
-                LogError(StringFormat("Slippage exceeds limit (%.1f pips > %d pips). Closing position ticket=%ld",
-                                    slippagePips, SLIPPAGE_LIMIT, result.ticket));
-
-                // Close the position at market (avoid locking in bad fill)
-                OrderClose(result.ticket, lots, SymbolInfoDouble(Symbol(), SYMBOL_BID), 50);
-
-                result.success = false;
-                result.slippage = slippagePips;
-                return result;
-            }
-        }
-        else
-        {
-            // Transient error; may retry
-            LogError(StringFormat("OrderSend retcode=%d, Attempt=%d/%d",
-                                retcode, attempt + 1, RETRY_ATTEMPTS));
-
-            if (attempt < RETRY_ATTEMPTS - 1)
-            {
-                Sleep(RETRY_DELAY);
-                continue;
-            }
-            else
-            {
+                // OrderSelect failed; log error and return
+                LogError(StringFormat("Failed to select order %lld for price validation", ticket));
                 result.success = false;
                 return result;
             }
