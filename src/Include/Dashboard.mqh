@@ -1,505 +1,550 @@
 //+------------------------------------------------------------------+
-//| Dashboard.mqh                                                    |
-//| Volume Profile Dashboard — Metrics Calculation Engine            |
+//| Dashboard.mqh                                                     |
+//| Volume Profile Dashboard — Core Metrics Calculation Engine       |
 //| Phase 5: Trade Data Visualisation and Reporting                  |
 //|                                                                  |
-//| Core Functions:                                                  |
-//|   - InitializeDashboard()      - Reset metrics to defaults       |
-//|   - RefreshDashboardMetrics()  - Master orchestrator (bar close) |
-//|   - UpdateEquityCurve()        - Running equity from history     |
-//|   - UpdateDailyPnL()           - Daily P&L aggregation           |
-//|   - CalculateSummaryStats()    - Win rate, PF, trade count       |
-//|   - CalculatePerSymbolStats()  - XAUUSD vs EURUSD split (D-04)   |
-//|   - CalculateMaxDrawdown()     - Max DD validation (<=2% gate)   |
+//| Purpose:                                                         |
+//|   Centralises all dashboard metric calculations in one module.   |
+//|   Aggregates trade history via HistorySelect(), computes equity  |
+//|   curves, win rate, profit factor, max drawdown, and per-symbol  |
+//|   breakdowns. Decouples metrics logic from ChartObject rendering. |
 //|                                                                  |
-//| Data Source:                                                     |
-//|   - HistorySelect() + HistoryDealGet*() for closed trades        |
-//|   - AccountInfoDouble(ACCOUNT_EQUITY) for running equity         |
-//|   - DashboardMetrics struct for aggregated display data          |
+//| Integration:                                                     |
+//|   - Called from Dashboard_Indicator.mq5 on every bar close       |
+//|   - Reads closed trades from MT5 HistorySelect()                 |
+//|   - Displays metrics validated against Phase 3 success gates     |
+//|   - Per-symbol: XAUUSD and EURUSD tracked separately             |
 //|                                                                  |
-//| Phase 3 Gates (live metrics validation):                         |
-//|   - Win rate >= 50%  (REQ-042)                                   |
-//|   - Profit Factor >= 1.5  (REQ-042)                              |
-//|   - Max daily drawdown <= 2%  (REQ-042)                          |
-//|                                                                  |
-//| D-06: Bar-close refresh cadence (no tick-level calculations)    |
-//| D-04: Per-symbol breakdown (XAUUSD and EURUSD separate)         |
+//| Phase 3 Gate Thresholds (displayed live):                        |
+//|   - Win Rate   >= 50%                                            |
+//|   - Profit Factor >= 1.5                                         |
+//|   - Max Daily Drawdown <= 2%                                     |
 //|                                                                  |
 //+------------------------------------------------------------------+
 
 #ifndef __DASHBOARD_MQH__
 #define __DASHBOARD_MQH__
 
+#include "JournalLogger.mqh"
 #include "TradeExecution.mqh"
 #include "RiskManager.mqh"
-#include "Utils.mqh"
-#include <Trade/Trade.mqh>
-
-// ==================== CONSTANTS ====================
-
-#define MIN_WIN_RATE 0.50           // 50% minimum (REQ-042)
-#define MIN_PROFIT_FACTOR 1.5       // 1.5x minimum (REQ-042)
-#define MAX_DAILY_DRAWDOWN 0.02     // 2% maximum (REQ-042)
-#define EQUITY_CURVE_HISTORY 500    // Store up to 500 bar closes
-
-// ==================== DATA STRUCTURES ====================
 
 //+------------------------------------------------------------------+
-//| DashboardMetrics — Aggregated dashboard data for display         |
-//| All fields populated by calculation functions below              |
+//| Constants                                                        |
 //+------------------------------------------------------------------+
+
+#define DASHBOARD_MAX_EQUITY_POINTS 500    // Max equity curve history points
+#define DASHBOARD_MAX_DAILY_RECORDS 365    // Max daily P&L records (1 year)
+
+// Phase 3 success gate thresholds (REQ-042)
+#define GATE_MIN_WIN_RATE     0.50         // 50% minimum win rate
+#define GATE_MIN_PROFIT_FACTOR 1.50        // 1.5 minimum profit factor
+#define GATE_MAX_DAILY_DD     0.02         // 2% maximum daily drawdown
+
+//+------------------------------------------------------------------+
+//| DashboardMetrics Struct                                          |
+//|                                                                  |
+//| Master container for all dashboard display data.                 |
+//| Updated once per bar close by RefreshDashboardMetrics().         |
+//+------------------------------------------------------------------+
+
 struct DashboardMetrics
 {
-    // Equity curve data
-    datetime equityTime[];          // Timestamps for equity values
-    double equityValues[];          // Running equity at each bar
-    int equityCount;                // Current equity array size
+    // Equity Curve
+    double  startingBalance;            // Balance at indicator attach time
+    double  currentEquity;             // Current account equity (real-time)
+    double  currentBalance;            // Current account balance
+    double  equityPnL;                 // currentEquity - startingBalance
+    double  equityPnLPercent;          // equityPnL / startingBalance * 100
 
-    // Daily P&L tracking
-    datetime dailyPnLDates[];       // Daily date stamps
-    double dailyPnLValues[];        // Daily P&L in currency
-    int dailyCount;                 // Daily entries count
+    // Daily P&L (resets each trading day)
+    double  dailyPnL;                  // Today's realised P&L (currency)
+    double  dailyPnLPercent;           // dailyPnL / startingBalance * 100
+    double  dailyStartBalance;         // Balance at session start today
+    datetime dailyResetTime;           // Timestamp of last daily reset
 
-    // Summary statistics
-    int totalTrades;                // Total executed trades
-    int winningTrades;              // Trades with profit > 0
-    int losingTrades;               // Trades with profit < 0
-    double winRate;                 // winningTrades / totalTrades
-    double profitFactor;            // sumWinPnL / abs(sumLossPnL)
-    double maxDailyDrawdown;        // Lowest daily equity vs. peak
-    double currentEquity;           // Current account equity
-    double sessionStartEquity;      // Starting equity when panel initialized
-    double totalRealizedPnL;        // Cumulative P&L from all closed trades
+    // Summary Statistics
+    int     totalTrades;               // Total completed trades
+    int     winningTrades;             // Trades with pnlCurrency > 0
+    int     losingTrades;              // Trades with pnlCurrency <= 0
+    double  winRate;                   // winningTrades / totalTrades
+    double  grossProfit;               // Sum of winning trade P&L
+    double  grossLoss;                 // Sum of losing trade P&L (absolute value)
+    double  profitFactor;              // grossProfit / grossLoss
+    double  maxDailyDrawdown;          // Worst single-day drawdown (percent)
+    double  averageWin;                // Average winning trade P&L
+    double  averageLoss;               // Average losing trade P&L (absolute)
 
-    // Per-symbol breakdown (D-04: XAUUSD and EURUSD separate)
-    string symbolXAUUSD_name;       // "XAUUSD"
-    int symbolXAUUSD_trades;        // Trade count on XAUUSD
-    int symbolXAUUSD_wins;          // Winning trades
-    double symbolXAUUSD_totalPnL;   // Total P&L currency
-    double symbolXAUUSD_winRate;    // Win rate %
-    double symbolXAUUSD_profitFactor; // Profit factor
+    // Per-Symbol Breakdown — XAUUSD
+    int     symbolXAUUSD_trades;       // Total XAUUSD trades
+    int     symbolXAUUSD_wins;         // XAUUSD winning trades
+    double  symbolXAUUSD_winRate;      // XAUUSD win rate
+    double  symbolXAUUSD_pnl;          // XAUUSD total P&L
+    double  symbolXAUUSD_profitFactor; // XAUUSD profit factor
 
-    string symbolEURUSD_name;       // "EURUSD"
-    int symbolEURUSD_trades;        // Trade count on EURUSD
-    int symbolEURUSD_wins;          // Winning trades
-    double symbolEURUSD_totalPnL;   // Total P&L currency
-    double symbolEURUSD_winRate;    // Win rate %
-    double symbolEURUSD_profitFactor; // Profit factor
+    // Per-Symbol Breakdown — EURUSD
+    int     symbolEURUSD_trades;       // Total EURUSD trades
+    int     symbolEURUSD_wins;         // EURUSD winning trades
+    double  symbolEURUSD_winRate;      // EURUSD win rate
+    double  symbolEURUSD_pnl;          // EURUSD total P&L
+    double  symbolEURUSD_profitFactor; // EURUSD profit factor
+
+    // Gate Validation Flags (Phase 3 thresholds)
+    bool    gateWinRatePassed;         // winRate >= GATE_MIN_WIN_RATE
+    bool    gateProfitFactorPassed;    // profitFactor >= GATE_MIN_PROFIT_FACTOR
+    bool    gateMaxDDPassed;           // maxDailyDrawdown <= GATE_MAX_DAILY_DD
+    bool    allGatesPassed;            // All three gates met
+
+    // Equity Curve History (ring buffer)
+    double  equityCurve[DASHBOARD_MAX_EQUITY_POINTS];
+    datetime equityTimes[DASHBOARD_MAX_EQUITY_POINTS];
+    int     equityCurveCount;          // Current number of points in history
 };
 
-// ==================== FUNCTION DECLARATIONS ====================
+//+------------------------------------------------------------------+
+//| Function Declarations                                            |
+//+------------------------------------------------------------------+
 
+// Core lifecycle
 void InitializeDashboard(DashboardMetrics &metrics);
 void RefreshDashboardMetrics(DashboardMetrics &metrics);
+
+// Equity and balance
 void UpdateEquityCurve(DashboardMetrics &metrics);
-void UpdateDailyPnL(DashboardMetrics &metrics);
+
+// Trade history aggregation (HistorySelect)
+void CalculateDailyPnL(DashboardMetrics &metrics);
 void CalculateSummaryStats(DashboardMetrics &metrics);
 void CalculatePerSymbolStats(DashboardMetrics &metrics);
 void CalculateMaxDrawdown(DashboardMetrics &metrics);
 
-// ==================== END DECLARATIONS ====================
-
-// ==================== FUNCTION IMPLEMENTATIONS ====================
+// Gate validation
+void ValidatePhase3Gates(DashboardMetrics &metrics);
 
 //+------------------------------------------------------------------+
-//| InitializeDashboard() — Reset all metrics to safe defaults       |
-//| Called once on indicator OnInit() before any calculations        |
+//| InitializeDashboard                                              |
+//|                                                                  |
+//| Reset all metrics to default state. Called once at OnInit().     |
 //+------------------------------------------------------------------+
+
 void InitializeDashboard(DashboardMetrics &metrics)
 {
-    metrics.totalTrades = 0;
-    metrics.winningTrades = 0;
-    metrics.losingTrades = 0;
-    metrics.winRate = 0.0;
-    metrics.profitFactor = 0.0;
-    metrics.maxDailyDrawdown = 0.0;
-    metrics.currentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
-    metrics.sessionStartEquity = metrics.currentEquity;
-    metrics.totalRealizedPnL = 0.0;
+    // Equity snapshot at attach time
+    metrics.startingBalance    = AccountInfoDouble(ACCOUNT_BALANCE);
+    metrics.currentEquity      = AccountInfoDouble(ACCOUNT_EQUITY);
+    metrics.currentBalance     = AccountInfoDouble(ACCOUNT_BALANCE);
+    metrics.equityPnL          = 0.0;
+    metrics.equityPnLPercent   = 0.0;
 
-    metrics.equityCount = 0;
-    metrics.dailyCount = 0;
+    // Daily P&L initialisation
+    metrics.dailyPnL           = 0.0;
+    metrics.dailyPnLPercent    = 0.0;
+    metrics.dailyStartBalance  = metrics.startingBalance;
+    metrics.dailyResetTime     = TimeCurrent();
 
-    // Per-symbol defaults
-    metrics.symbolXAUUSD_name = "XAUUSD";
-    metrics.symbolXAUUSD_trades = 0;
-    metrics.symbolXAUUSD_wins = 0;
-    metrics.symbolXAUUSD_totalPnL = 0.0;
-    metrics.symbolXAUUSD_winRate = 0.0;
+    // Summary stats — clear
+    metrics.totalTrades        = 0;
+    metrics.winningTrades      = 0;
+    metrics.losingTrades       = 0;
+    metrics.winRate            = 0.0;
+    metrics.grossProfit        = 0.0;
+    metrics.grossLoss          = 0.0;
+    metrics.profitFactor       = 0.0;
+    metrics.maxDailyDrawdown   = 0.0;
+    metrics.averageWin         = 0.0;
+    metrics.averageLoss        = 0.0;
+
+    // Per-symbol XAUUSD — clear
+    metrics.symbolXAUUSD_trades       = 0;
+    metrics.symbolXAUUSD_wins         = 0;
+    metrics.symbolXAUUSD_winRate      = 0.0;
+    metrics.symbolXAUUSD_pnl          = 0.0;
     metrics.symbolXAUUSD_profitFactor = 0.0;
 
-    metrics.symbolEURUSD_name = "EURUSD";
-    metrics.symbolEURUSD_trades = 0;
-    metrics.symbolEURUSD_wins = 0;
-    metrics.symbolEURUSD_totalPnL = 0.0;
-    metrics.symbolEURUSD_winRate = 0.0;
+    // Per-symbol EURUSD — clear
+    metrics.symbolEURUSD_trades       = 0;
+    metrics.symbolEURUSD_wins         = 0;
+    metrics.symbolEURUSD_winRate      = 0.0;
+    metrics.symbolEURUSD_pnl          = 0.0;
     metrics.symbolEURUSD_profitFactor = 0.0;
+
+    // Gate flags — clear
+    metrics.gateWinRatePassed      = false;
+    metrics.gateProfitFactorPassed = false;
+    metrics.gateMaxDDPassed        = false;
+    metrics.allGatesPassed         = false;
+
+    // Equity curve — initialise ring buffer
+    metrics.equityCurveCount = 0;
+    ArrayInitialize(metrics.equityCurve, 0.0);
+
+    Print(StringFormat("Dashboard initialised. Starting balance: %.2f", metrics.startingBalance));
 }
 
 //+------------------------------------------------------------------+
-//| RefreshDashboardMetrics() — Master orchestrator (bar close)      |
-//| D-06: Bar-close update cadence — no tick-level calculations      |
-//| Calls all sub-functions in correct dependency order              |
+//| RefreshDashboardMetrics                                          |
+//|                                                                  |
+//| Master update function called once per bar close.               |
+//| Sequence: equity → daily P&L → summary stats → per-symbol →     |
+//|           max drawdown → gate validation                         |
 //+------------------------------------------------------------------+
+
 void RefreshDashboardMetrics(DashboardMetrics &metrics)
 {
-    // Update equity curve (running balance from history)
+    // Step 1: Snapshot current equity
     UpdateEquityCurve(metrics);
 
-    // Recalculate daily P&L
-    UpdateDailyPnL(metrics);
+    // Step 2: Calculate today's realised P&L
+    CalculateDailyPnL(metrics);
 
-    // Refresh summary statistics (win rate, PF, max DD)
+    // Step 3: Aggregate all-time summary statistics
     CalculateSummaryStats(metrics);
 
-    // Per-symbol breakdown (XAUUSD vs EURUSD)
+    // Step 4: Per-symbol performance breakdown
     CalculatePerSymbolStats(metrics);
 
-    // Max drawdown validation (enforce <=2% gate)
+    // Step 5: Maximum daily drawdown across all trading days
     CalculateMaxDrawdown(metrics);
+
+    // Step 6: Validate Phase 3 gates
+    ValidatePhase3Gates(metrics);
 }
 
 //+------------------------------------------------------------------+
-//| UpdateEquityCurve() — Running equity from HistorySelect()        |
-//| Accumulates realized P&L from closed deals since session start   |
-//| D-06: Called once per bar close; no tick-level recalculation     |
+//| UpdateEquityCurve                                                |
+//|                                                                  |
+//| Appends current equity to ring buffer history.                  |
+//| Ring buffer overwrites oldest entry when full.                  |
 //+------------------------------------------------------------------+
+
 void UpdateEquityCurve(DashboardMetrics &metrics)
 {
-    // Session start = last 24 hours (simplification for Phase 5)
-    // Phase 4 refinement: use midnight SGT (UTC+8) or attach time, whichever earlier
-    datetime sessionStart = TimeCurrent() - 86400;  // Last 24 hours
+    metrics.currentEquity  = AccountInfoDouble(ACCOUNT_EQUITY);
+    metrics.currentBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+    metrics.equityPnL      = metrics.currentEquity - metrics.startingBalance;
 
-    if (!HistorySelect(sessionStart, TimeCurrent()))
+    if (metrics.startingBalance > 0)
     {
-        Print("UpdateEquityCurve: HistorySelect failed");
+        metrics.equityPnLPercent = (metrics.equityPnL / metrics.startingBalance) * 100.0;
+    }
+
+    // Append to ring buffer (rotate when full)
+    int idx = metrics.equityCurveCount % DASHBOARD_MAX_EQUITY_POINTS;
+    metrics.equityCurve[idx]  = metrics.currentEquity;
+    metrics.equityTimes[idx]  = TimeCurrent();
+    metrics.equityCurveCount++;
+}
+
+//+------------------------------------------------------------------+
+//| CalculateDailyPnL                                                |
+//|                                                                  |
+//| Queries HistorySelect() for today's closed deals.               |
+//| Resets daily counter at midnight (TimeCurrent day change).      |
+//| Mitigates Pitfall 1: HistorySelect called once per bar only.    |
+//+------------------------------------------------------------------+
+
+void CalculateDailyPnL(DashboardMetrics &metrics)
+{
+    // Determine today's midnight boundary
+    datetime now = TimeCurrent();
+    datetime todayMidnight = now - (now % 86400);  // Floor to day boundary
+
+    // Reset if new trading day
+    if (todayMidnight > metrics.dailyResetTime)
+    {
+        metrics.dailyResetTime    = todayMidnight;
+        metrics.dailyStartBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+        metrics.dailyPnL          = 0.0;
+        metrics.dailyPnLPercent   = 0.0;
+    }
+
+    // Select today's deal history (D-06: called once per bar, not every tick)
+    if (!HistorySelect(todayMidnight, now))
+    {
+        Print("WARNING: HistorySelect() failed for daily P&L calculation");
         return;
     }
 
-    double currentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
-    double runningBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+    // Aggregate realised P&L from completed deals
+    int totalDeals = HistoryDealsTotal();
+    double todayPnL = 0.0;
 
-    int dealCount = HistoryDealsTotal();
-
-    // Calculate realized P&L from all closed deals in session
-    double realizedPnL = 0;
-    for (int i = 0; i < dealCount; i++)
+    for (int i = 0; i < totalDeals; i++)
     {
         ulong dealTicket = HistoryDealGetTicket(i);
         if (dealTicket == 0) continue;
 
-        double dealProfit = HistoryDealGetDouble(dealTicket, DEAL_PROFIT);
-        realizedPnL += dealProfit;
+        // Only count DEAL_ENTRY_OUT (closing deals) for realised P&L
+        ENUM_DEAL_ENTRY dealEntry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
+        if (dealEntry != DEAL_ENTRY_OUT) continue;
+
+        todayPnL += HistoryDealGetDouble(dealTicket, DEAL_PROFIT);
+        todayPnL += HistoryDealGetDouble(dealTicket, DEAL_SWAP);
+        todayPnL += HistoryDealGetDouble(dealTicket, DEAL_COMMISSION);
     }
 
-    // Update totals
-    metrics.totalRealizedPnL = realizedPnL;
-    metrics.currentEquity = currentEquity;
+    metrics.dailyPnL = todayPnL;
 
-    // Append equity curve entry (bounded by EQUITY_CURVE_HISTORY)
-    if (metrics.equityCount < EQUITY_CURVE_HISTORY)
+    if (metrics.dailyStartBalance > 0)
     {
-        ArrayResize(metrics.equityTime, metrics.equityCount + 1);
-        ArrayResize(metrics.equityValues, metrics.equityCount + 1);
-
-        metrics.equityTime[metrics.equityCount] = TimeCurrent();
-        metrics.equityValues[metrics.equityCount] = currentEquity;
-        metrics.equityCount++;
-    }
-    else
-    {
-        // Ring buffer: shift oldest entry out, write newest at end
-        // Prevents unbounded array growth (T5-02 mitigation)
-        for (int i = 0; i < EQUITY_CURVE_HISTORY - 1; i++)
-        {
-            metrics.equityTime[i] = metrics.equityTime[i + 1];
-            metrics.equityValues[i] = metrics.equityValues[i + 1];
-        }
-        metrics.equityTime[EQUITY_CURVE_HISTORY - 1] = TimeCurrent();
-        metrics.equityValues[EQUITY_CURVE_HISTORY - 1] = currentEquity;
-        // equityCount stays at EQUITY_CURVE_HISTORY
+        metrics.dailyPnLPercent = (metrics.dailyPnL / metrics.dailyStartBalance) * 100.0;
     }
 }
 
 //+------------------------------------------------------------------+
-//| UpdateDailyPnL() — Daily P&L aggregation (calendar day UTC)     |
-//| Aggregates closed deal profits per calendar day                  |
-//| Phase 4: Refine timezone to SGT (UTC+8) if needed               |
+//| CalculateSummaryStats                                            |
+//|                                                                  |
+//| Aggregates all-time win rate, profit factor, average win/loss   |
+//| from full MT5 history (from account open to now).               |
 //+------------------------------------------------------------------+
-void UpdateDailyPnL(DashboardMetrics &metrics)
-{
-    // Midnight UTC today (simplification; Phase 4 can refine for SGT)
-    datetime today00 = (TimeCurrent() / 86400) * 86400;
 
-    if (!HistorySelect(today00, TimeCurrent()))
+void CalculateSummaryStats(DashboardMetrics &metrics)
+{
+    // Select full account history
+    datetime fromTime = 0;  // From the beginning
+    datetime toTime   = TimeCurrent();
+
+    if (!HistorySelect(fromTime, toTime))
     {
-        Print("UpdateDailyPnL: HistorySelect failed");
+        Print("WARNING: HistorySelect() failed for summary stats");
         return;
     }
 
-    int dealCount = HistoryDealsTotal();
-    double dailySum = 0;
+    int totalDeals = HistoryDealsTotal();
 
-    for (int i = 0; i < dealCount; i++)
+    // Reset counters before re-aggregating
+    metrics.totalTrades    = 0;
+    metrics.winningTrades  = 0;
+    metrics.losingTrades   = 0;
+    metrics.grossProfit    = 0.0;
+    metrics.grossLoss      = 0.0;
+
+    for (int i = 0; i < totalDeals; i++)
     {
         ulong dealTicket = HistoryDealGetTicket(i);
         if (dealTicket == 0) continue;
 
-        double dealProfit = HistoryDealGetDouble(dealTicket, DEAL_PROFIT);
-        dailySum += dealProfit;
-    }
+        // Only count DEAL_ENTRY_OUT (closing deals)
+        ENUM_DEAL_ENTRY dealEntry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
+        if (dealEntry != DEAL_ENTRY_OUT) continue;
 
-    // Check if today's entry already exists and update, or append new
-    if (metrics.dailyCount == 0 ||
-        (metrics.dailyCount > 0 && metrics.dailyPnLDates[metrics.dailyCount - 1] != today00))
-    {
-        // New calendar day — append entry
-        if (metrics.dailyCount >= 250)  // Max 250 days of history
+        double profit = HistoryDealGetDouble(dealTicket, DEAL_PROFIT)
+                      + HistoryDealGetDouble(dealTicket, DEAL_SWAP)
+                      + HistoryDealGetDouble(dealTicket, DEAL_COMMISSION);
+
+        metrics.totalTrades++;
+
+        if (profit > 0)
         {
-            // Shift array down to discard oldest day
-            for (int i = 0; i < 249; i++)
-            {
-                metrics.dailyPnLDates[i] = metrics.dailyPnLDates[i + 1];
-                metrics.dailyPnLValues[i] = metrics.dailyPnLValues[i + 1];
-            }
-            metrics.dailyCount = 249;
+            metrics.winningTrades++;
+            metrics.grossProfit += profit;
         }
         else
         {
-            ArrayResize(metrics.dailyPnLDates, metrics.dailyCount + 1);
-            ArrayResize(metrics.dailyPnLValues, metrics.dailyCount + 1);
-        }
-
-        metrics.dailyPnLDates[metrics.dailyCount] = today00;
-        metrics.dailyPnLValues[metrics.dailyCount] = dailySum;
-        metrics.dailyCount++;
-    }
-    else if (metrics.dailyCount > 0)
-    {
-        // Same calendar day — update today's running total
-        metrics.dailyPnLValues[metrics.dailyCount - 1] = dailySum;
-    }
-}
-
-//+------------------------------------------------------------------+
-//| CalculateSummaryStats() — Win rate, profit factor, trade count   |
-//| REQ-042: Win rate >=50%, Profit Factor >=1.5                     |
-//| Phase 3 gate thresholds: MIN_WIN_RATE, MIN_PROFIT_FACTOR         |
-//+------------------------------------------------------------------+
-void CalculateSummaryStats(DashboardMetrics &metrics)
-{
-    datetime sessionStart = TimeCurrent() - 86400;  // Last 24 hours
-
-    if (!HistorySelect(sessionStart, TimeCurrent()))
-    {
-        Print("CalculateSummaryStats: HistorySelect failed");
-        return;
-    }
-
-    int dealCount = HistoryDealsTotal();
-
-    metrics.totalTrades = dealCount;
-    metrics.winningTrades = 0;
-    metrics.losingTrades = 0;
-
-    double sumWinPnL = 0;
-    double sumLossPnL = 0;
-
-    for (int i = 0; i < dealCount; i++)
-    {
-        ulong dealTicket = HistoryDealGetTicket(i);
-        if (dealTicket == 0) continue;
-
-        double dealProfit = HistoryDealGetDouble(dealTicket, DEAL_PROFIT);
-
-        if (dealProfit > 0)
-        {
-            metrics.winningTrades++;
-            sumWinPnL += dealProfit;
-        }
-        else if (dealProfit < 0)
-        {
             metrics.losingTrades++;
-            sumLossPnL += MathAbs(dealProfit);
+            metrics.grossLoss += MathAbs(profit);
         }
-        // dealProfit == 0: break-even trade; not counted in win or loss
     }
 
-    // Win rate (REQ-042: must be >=50%)
+    // Compute derived metrics
     if (metrics.totalTrades > 0)
     {
-        metrics.winRate = (double)metrics.winningTrades / metrics.totalTrades;
-    }
-    else
-    {
-        metrics.winRate = 0.0;
+        metrics.winRate = (double)metrics.winningTrades / (double)metrics.totalTrades;
     }
 
-    // Profit factor (REQ-042: must be >=1.5)
-    if (sumLossPnL > 0)
+    if (metrics.grossLoss > 0)
     {
-        metrics.profitFactor = sumWinPnL / sumLossPnL;
+        metrics.profitFactor = metrics.grossProfit / metrics.grossLoss;
     }
-    else if (sumWinPnL > 0)
+    else if (metrics.grossProfit > 0)
     {
-        metrics.profitFactor = 999.0;  // No losses — report as very high
-    }
-    else
-    {
-        metrics.profitFactor = 0.0;  // No trades executed yet
+        metrics.profitFactor = 999.99;  // No losses — show cap value
     }
 
-    // Log gate status for Phase 3 validation
-    if (metrics.totalTrades > 0)
-    {
-        if (metrics.winRate < MIN_WIN_RATE)
-        {
-            Print(StringFormat("WARNING: Win rate %.1f%% below gate of %.1f%%",
-                              metrics.winRate * 100, MIN_WIN_RATE * 100));
-        }
-        if (metrics.profitFactor < MIN_PROFIT_FACTOR && sumLossPnL > 0)
-        {
-            Print(StringFormat("WARNING: Profit factor %.2f below gate of %.2f",
-                              metrics.profitFactor, MIN_PROFIT_FACTOR));
-        }
-    }
+    if (metrics.winningTrades > 0)
+        metrics.averageWin = metrics.grossProfit / metrics.winningTrades;
+
+    if (metrics.losingTrades > 0)
+        metrics.averageLoss = metrics.grossLoss / metrics.losingTrades;
 }
 
 //+------------------------------------------------------------------+
-//| CalculatePerSymbolStats() — Per-symbol breakdown (D-04)          |
-//| Separates XAUUSD vs EURUSD performance metrics                   |
-//| Each symbol gets independent win rate and profit factor          |
+//| CalculatePerSymbolStats                                          |
+//|                                                                  |
+//| Splits aggregated stats by XAUUSD and EURUSD.                   |
+//| Satisfies D-04: per-symbol breakdown requirement.               |
 //+------------------------------------------------------------------+
+
 void CalculatePerSymbolStats(DashboardMetrics &metrics)
 {
-    datetime sessionStart = TimeCurrent() - 86400;
+    datetime fromTime = 0;
+    datetime toTime   = TimeCurrent();
 
-    if (!HistorySelect(sessionStart, TimeCurrent()))
+    if (!HistorySelect(fromTime, toTime))
     {
-        Print("CalculatePerSymbolStats: HistorySelect failed");
+        Print("WARNING: HistorySelect() failed for per-symbol stats");
         return;
     }
 
-    // Reset per-symbol counters before re-aggregation
+    int totalDeals = HistoryDealsTotal();
+
+    // Reset per-symbol counters
     metrics.symbolXAUUSD_trades = 0;
-    metrics.symbolXAUUSD_wins = 0;
-    metrics.symbolXAUUSD_totalPnL = 0;
-    metrics.symbolXAUUSD_winRate = 0;
-    metrics.symbolXAUUSD_profitFactor = 0;
+    metrics.symbolXAUUSD_wins   = 0;
+    metrics.symbolXAUUSD_pnl    = 0.0;
+    double xauusd_gross_profit  = 0.0;
+    double xauusd_gross_loss    = 0.0;
 
     metrics.symbolEURUSD_trades = 0;
-    metrics.symbolEURUSD_wins = 0;
-    metrics.symbolEURUSD_totalPnL = 0;
-    metrics.symbolEURUSD_winRate = 0;
-    metrics.symbolEURUSD_profitFactor = 0;
+    metrics.symbolEURUSD_wins   = 0;
+    metrics.symbolEURUSD_pnl    = 0.0;
+    double eurusd_gross_profit  = 0.0;
+    double eurusd_gross_loss    = 0.0;
 
-    double xauWinPnL = 0, xauLossPnL = 0;
-    double eurWinPnL = 0, eurLossPnL = 0;
-
-    int dealCount = HistoryDealsTotal();
-    for (int i = 0; i < dealCount; i++)
+    for (int i = 0; i < totalDeals; i++)
     {
         ulong dealTicket = HistoryDealGetTicket(i);
         if (dealTicket == 0) continue;
 
-        string dealSymbol = HistoryDealGetString(dealTicket, DEAL_SYMBOL);
-        double dealProfit = HistoryDealGetDouble(dealTicket, DEAL_PROFIT);
+        // Only closing deals
+        ENUM_DEAL_ENTRY dealEntry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
+        if (dealEntry != DEAL_ENTRY_OUT) continue;
 
-        if (dealSymbol == "XAUUSD")
+        string symbol = HistoryDealGetString(dealTicket, DEAL_SYMBOL);
+        double profit = HistoryDealGetDouble(dealTicket, DEAL_PROFIT)
+                      + HistoryDealGetDouble(dealTicket, DEAL_SWAP)
+                      + HistoryDealGetDouble(dealTicket, DEAL_COMMISSION);
+
+        if (StringFind(symbol, "XAUUSD") >= 0)
         {
             metrics.symbolXAUUSD_trades++;
-            metrics.symbolXAUUSD_totalPnL += dealProfit;
-            if (dealProfit > 0)
+            metrics.symbolXAUUSD_pnl += profit;
+            if (profit > 0)
             {
                 metrics.symbolXAUUSD_wins++;
-                xauWinPnL += dealProfit;
+                xauusd_gross_profit += profit;
             }
-            else if (dealProfit < 0)
+            else
             {
-                xauLossPnL += MathAbs(dealProfit);
+                xauusd_gross_loss += MathAbs(profit);
             }
         }
-        else if (dealSymbol == "EURUSD")
+        else if (StringFind(symbol, "EURUSD") >= 0)
         {
             metrics.symbolEURUSD_trades++;
-            metrics.symbolEURUSD_totalPnL += dealProfit;
-            if (dealProfit > 0)
+            metrics.symbolEURUSD_pnl += profit;
+            if (profit > 0)
             {
                 metrics.symbolEURUSD_wins++;
-                eurWinPnL += dealProfit;
+                eurusd_gross_profit += profit;
             }
-            else if (dealProfit < 0)
+            else
             {
-                eurLossPnL += MathAbs(dealProfit);
+                eurusd_gross_loss += MathAbs(profit);
             }
         }
     }
 
-    // Calculate per-symbol win rate and profit factor
+    // XAUUSD derived metrics
     if (metrics.symbolXAUUSD_trades > 0)
     {
-        metrics.symbolXAUUSD_winRate = (double)metrics.symbolXAUUSD_wins / metrics.symbolXAUUSD_trades;
-        if (xauLossPnL > 0)
-            metrics.symbolXAUUSD_profitFactor = xauWinPnL / xauLossPnL;
-        else if (xauWinPnL > 0)
-            metrics.symbolXAUUSD_profitFactor = 999.0;
+        metrics.symbolXAUUSD_winRate = (double)metrics.symbolXAUUSD_wins
+                                      / (double)metrics.symbolXAUUSD_trades;
     }
+    if (xauusd_gross_loss > 0)
+        metrics.symbolXAUUSD_profitFactor = xauusd_gross_profit / xauusd_gross_loss;
+    else if (xauusd_gross_profit > 0)
+        metrics.symbolXAUUSD_profitFactor = 999.99;
 
+    // EURUSD derived metrics
     if (metrics.symbolEURUSD_trades > 0)
     {
-        metrics.symbolEURUSD_winRate = (double)metrics.symbolEURUSD_wins / metrics.symbolEURUSD_trades;
-        if (eurLossPnL > 0)
-            metrics.symbolEURUSD_profitFactor = eurWinPnL / eurLossPnL;
-        else if (eurWinPnL > 0)
-            metrics.symbolEURUSD_profitFactor = 999.0;
+        metrics.symbolEURUSD_winRate = (double)metrics.symbolEURUSD_wins
+                                      / (double)metrics.symbolEURUSD_trades;
     }
+    if (eurusd_gross_loss > 0)
+        metrics.symbolEURUSD_profitFactor = eurusd_gross_profit / eurusd_gross_loss;
+    else if (eurusd_gross_profit > 0)
+        metrics.symbolEURUSD_profitFactor = 999.99;
 }
 
 //+------------------------------------------------------------------+
-//| CalculateMaxDrawdown() — Maximum daily drawdown from equity curve |
-//| REQ-042: Max daily drawdown must be <=2%                         |
-//| T5-02: Operates on bounded equityValues[] (EQUITY_CURVE_HISTORY) |
+//| CalculateMaxDrawdown                                             |
+//|                                                                  |
+//| Computes worst single-day drawdown across all trading history.  |
+//| Uses daily balance snapshots from HistoryDealGetDouble().        |
 //+------------------------------------------------------------------+
+
 void CalculateMaxDrawdown(DashboardMetrics &metrics)
 {
-    if (metrics.equityCount == 0)
+    // Scan daily P&L records to find worst drawdown day
+    // Simplified approach: compare daily balance drop vs daily start balance
+
+    double worstDailyDrop = 0.0;
+
+    // Calculate running peak balance through all closed deals
+    datetime fromTime = 0;
+    datetime toTime   = TimeCurrent();
+
+    if (!HistorySelect(fromTime, toTime))
     {
-        metrics.maxDailyDrawdown = 0;
+        Print("WARNING: HistorySelect() failed for max drawdown calculation");
         return;
     }
 
-    double peakEquity = metrics.equityValues[0];
-    double maxDD = 0;
+    int totalDeals = HistoryDealsTotal();
+    double peakBalance = metrics.startingBalance;
+    double runningBalance = metrics.startingBalance;
 
-    for (int i = 1; i < metrics.equityCount; i++)
+    for (int i = 0; i < totalDeals; i++)
     {
-        // Track running peak
-        if (metrics.equityValues[i] > peakEquity)
+        ulong dealTicket = HistoryDealGetTicket(i);
+        if (dealTicket == 0) continue;
+
+        ENUM_DEAL_ENTRY dealEntry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
+        if (dealEntry != DEAL_ENTRY_OUT) continue;
+
+        double profit = HistoryDealGetDouble(dealTicket, DEAL_PROFIT)
+                      + HistoryDealGetDouble(dealTicket, DEAL_SWAP)
+                      + HistoryDealGetDouble(dealTicket, DEAL_COMMISSION);
+
+        runningBalance += profit;
+
+        // Track peak and drawdown
+        if (runningBalance > peakBalance)
         {
-            peakEquity = metrics.equityValues[i];
+            peakBalance = runningBalance;
         }
 
-        // Drawdown = (peak - current) / peak
-        if (peakEquity > 0)
+        if (peakBalance > 0)
         {
-            double drawdown = (peakEquity - metrics.equityValues[i]) / peakEquity;
-            if (drawdown > maxDD)
+            double drawdown = (peakBalance - runningBalance) / peakBalance;
+            if (drawdown > worstDailyDrop)
             {
-                maxDD = drawdown;
+                worstDailyDrop = drawdown;
             }
         }
     }
 
-    metrics.maxDailyDrawdown = maxDD;
-
-    // Log warning if gate exceeded (REQ-042: <=2%)
-    if (metrics.maxDailyDrawdown > MAX_DAILY_DRAWDOWN)
-    {
-        Print(StringFormat("WARNING: Max drawdown %.2f%% exceeds gate of %.2f%%",
-                          metrics.maxDailyDrawdown * 100, MAX_DAILY_DRAWDOWN * 100));
-    }
+    metrics.maxDailyDrawdown = worstDailyDrop;
 }
 
-// ==================== END IMPLEMENTATIONS ====================
+//+------------------------------------------------------------------+
+//| ValidatePhase3Gates                                              |
+//|                                                                  |
+//| Checks if current metrics meet Phase 3 success thresholds.      |
+//| Gate status flags drive visual indicators in Plan 03 rendering. |
+//+------------------------------------------------------------------+
 
-#endif  // __DASHBOARD_MQH__
+void ValidatePhase3Gates(DashboardMetrics &metrics)
+{
+    metrics.gateWinRatePassed      = (metrics.winRate >= GATE_MIN_WIN_RATE);
+    metrics.gateProfitFactorPassed = (metrics.profitFactor >= GATE_MIN_PROFIT_FACTOR);
+    metrics.gateMaxDDPassed        = (metrics.maxDailyDrawdown <= GATE_MAX_DAILY_DD);
+
+    metrics.allGatesPassed = metrics.gateWinRatePassed
+                           && metrics.gateProfitFactorPassed
+                           && metrics.gateMaxDDPassed;
+}
+
+#endif // __DASHBOARD_MQH__
