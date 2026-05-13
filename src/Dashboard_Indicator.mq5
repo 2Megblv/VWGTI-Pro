@@ -108,9 +108,8 @@ void UpdateDashboard()
     // Step 2: Log current state to MT5 Journal (optional, for debugging)
     LogDashboardState();
 
-    // Step 3: Update ChartObjects (handled in Plan 03)
-    // For now, just signal that data is ready
-    // ChartObjects will be created/updated in RenderDashboard() (Plan 03)
+    // Step 3: Render all ChartObjects (Plan 03)
+    RenderDashboard();
 }
 
 //+------------------------------------------------------------------+
@@ -150,6 +149,167 @@ void LogDashboardState()
 // Alternative: Use local copies for dashboard use
 // (Dashboard only needs read access; doesn't modify EA state)
 
+// === CHARTOBJECT HELPER (Plan 03 - Pitfall Mitigation) ===
+// Handles object creation/update without flicker or duplication.
+// Implements RESEARCH.md Pitfall 5 mitigation: check existence before create.
+
+void UpdateDashboardLabel(long chartId, string objectName, int xDistance, int yDistance,
+                          string text, color textColor = clrWhite, int fontSize = 10)
+{
+    if(ObjectFind(chartId, objectName) >= 0)
+    {
+        // Object exists — update text and color only (faster, no flicker)
+        ObjectSetString(chartId, objectName, OBJPROP_TEXT, text);
+        ObjectSetInteger(chartId, objectName, OBJPROP_COLOR, textColor);
+    }
+    else
+    {
+        // Object doesn't exist — create it
+        if(!ObjectCreate(chartId, objectName, OBJ_LABEL, 0, 0, 0))
+        {
+            Print(StringFormat("Dashboard: failed to create label '%s'", objectName));
+            return;
+        }
+        ObjectSetInteger(chartId, objectName, OBJPROP_XDISTANCE, xDistance);
+        ObjectSetInteger(chartId, objectName, OBJPROP_YDISTANCE, yDistance);
+        ObjectSetString(chartId, objectName, OBJPROP_TEXT, text);
+        ObjectSetInteger(chartId, objectName, OBJPROP_COLOR, textColor);
+        ObjectSetInteger(chartId, objectName, OBJPROP_FONTSIZE, fontSize);
+        ObjectSetString(chartId, objectName, OBJPROP_FONT, "Arial");
+        ObjectSetInteger(chartId, objectName, OBJPROP_ANCHOR, ANCHOR_LEFT_TOP);
+        ObjectSetInteger(chartId, objectName, OBJPROP_BACK, false);
+    }
+}
+
+// === RENDERING LAYER (Plan 03) ===
+// RenderDashboard() and UpdateDashboardLabel() handle all visual display.
+// Called once per bar from UpdateDashboard() (Plan 02).
+// Data source: g_metrics struct (populated by Dashboard.mqh Plan 01).
+
+void RenderDashboard()
+{
+    long   chartId    = ChartID();
+    int    xPos       = DashboardXOffset;
+    int    yPos       = DashboardYOffset;
+    const int lineH   = 20;               // pixels between lines
+    const color titleClr   = clrWhite;
+    const color okClr      = clrLimeGreen;
+    const color failClr    = clrRed;
+    const color neutralClr = clrSilver;
+
+    // --- HEADER ---
+    UpdateDashboardLabel(chartId, "Dash_Title", xPos, yPos,
+                         "VOLUME PROFILE DASHBOARD", titleClr, 12);
+    yPos += (int)(lineH * 1.5);
+
+    // --- EQUITY ---
+    UpdateDashboardLabel(chartId, "Dash_Equity", xPos, yPos,
+                         StringFormat("Equity: $%.2f", g_metrics.currentEquity),
+                         okClr, 10);
+    yPos += lineH;
+
+    // --- DAILY P&L ---
+    color pnlClr = (g_metrics.dailyPnL >= 0) ? okClr : failClr;
+    UpdateDashboardLabel(chartId, "Dash_DailyPnL", xPos, yPos,
+                         StringFormat("Daily P&L: $%.2f (%.2f%%)",
+                                      g_metrics.dailyPnL,
+                                      g_metrics.dailyPnLPercent),
+                         pnlClr, 10);
+    yPos += (int)(lineH * 1.5);
+
+    // --- SUMMARY STATS HEADER ---
+    UpdateDashboardLabel(chartId, "Dash_StatsHdr", xPos, yPos,
+                         "SUMMARY STATS", titleClr, 11);
+    yPos += lineH;
+
+    // Total Trades
+    UpdateDashboardLabel(chartId, "Dash_Trades", xPos, yPos,
+                         StringFormat("Total Trades: %d", g_metrics.totalTrades),
+                         neutralClr, 10);
+    yPos += lineH;
+
+    // Win Rate — Phase 3 gate >=50%
+    string wrCheck = g_metrics.gateWinRatePassed ? " \x2713" : " \x2717";
+    color  wrClr   = g_metrics.gateWinRatePassed ? okClr : failClr;
+    UpdateDashboardLabel(chartId, "Dash_WinRate", xPos, yPos,
+                         StringFormat("Win Rate: %.1f%%%s", g_metrics.winRate * 100, wrCheck),
+                         wrClr, 10);
+    yPos += lineH;
+
+    // Profit Factor — Phase 3 gate >=1.5
+    string pfCheck = g_metrics.gateProfitFactorPassed ? " \x2713" : " \x2717";
+    color  pfClr   = g_metrics.gateProfitFactorPassed ? okClr : failClr;
+    UpdateDashboardLabel(chartId, "Dash_PF", xPos, yPos,
+                         StringFormat("Profit Factor: %.2f%s", g_metrics.profitFactor, pfCheck),
+                         pfClr, 10);
+    yPos += lineH;
+
+    // Max Daily Drawdown — Phase 3 gate <=2%
+    string ddCheck = g_metrics.gateMaxDDPassed ? " \x2713" : " \x2717";
+    color  ddClr   = g_metrics.gateMaxDDPassed ? okClr : failClr;
+    UpdateDashboardLabel(chartId, "Dash_MaxDD", xPos, yPos,
+                         StringFormat("Max DD: %.2f%%%s", g_metrics.maxDailyDrawdown * 100, ddCheck),
+                         ddClr, 10);
+    yPos += (int)(lineH * 1.5);
+
+    // --- PER-SYMBOL BREAKDOWN ---
+    int xauCol = xPos;
+    int eurCol = xPos + 185;   // EURUSD column offset
+
+    UpdateDashboardLabel(chartId, "Dash_XAUHdr", xauCol, yPos, "XAUUSD", titleClr, 11);
+    UpdateDashboardLabel(chartId, "Dash_EURHdr", eurCol, yPos, "EURUSD", titleClr, 11);
+    yPos += lineH;
+
+    UpdateDashboardLabel(chartId, "Dash_XAUTrades", xauCol, yPos,
+                         StringFormat("Trades: %d", g_metrics.symbolXAUUSD_trades), neutralClr, 10);
+    UpdateDashboardLabel(chartId, "Dash_EURTrades", eurCol, yPos,
+                         StringFormat("Trades: %d", g_metrics.symbolEURUSD_trades), neutralClr, 10);
+    yPos += lineH;
+
+    UpdateDashboardLabel(chartId, "Dash_XAUWR", xauCol, yPos,
+                         StringFormat("Win Rate: %.1f%%", g_metrics.symbolXAUUSD_winRate * 100),
+                         neutralClr, 10);
+    UpdateDashboardLabel(chartId, "Dash_EURWR", eurCol, yPos,
+                         StringFormat("Win Rate: %.1f%%", g_metrics.symbolEURUSD_winRate * 100),
+                         neutralClr, 10);
+    yPos += lineH;
+
+    UpdateDashboardLabel(chartId, "Dash_XAUPF", xauCol, yPos,
+                         StringFormat("Profit Factor: %.2f", g_metrics.symbolXAUUSD_profitFactor),
+                         neutralClr, 10);
+    UpdateDashboardLabel(chartId, "Dash_EURPF", eurCol, yPos,
+                         StringFormat("Profit Factor: %.2f", g_metrics.symbolEURUSD_profitFactor),
+                         neutralClr, 10);
+    yPos += lineH;
+
+    UpdateDashboardLabel(chartId, "Dash_XAUPnL", xauCol, yPos,
+                         StringFormat("Total P&L: $%.2f", g_metrics.symbolXAUUSD_pnl),
+                         neutralClr, 10);
+    UpdateDashboardLabel(chartId, "Dash_EURPnL", eurCol, yPos,
+                         StringFormat("Total P&L: $%.2f", g_metrics.symbolEURUSD_pnl),
+                         neutralClr, 10);
+
+    ChartRedraw(chartId);
+}
+
+void CleanupDashboardObjects()
+{
+    long chartId = ChartID();
+    string prefixes[] = {
+        "Dash_Title", "Dash_Equity", "Dash_DailyPnL", "Dash_StatsHdr",
+        "Dash_Trades", "Dash_WinRate", "Dash_PF", "Dash_MaxDD",
+        "Dash_XAUHdr", "Dash_EURHdr", "Dash_XAUTrades", "Dash_EURTrades",
+        "Dash_XAUWR", "Dash_EURWR", "Dash_XAUPF", "Dash_EURPF",
+        "Dash_XAUPnL", "Dash_EURPnL"
+    };
+    for(int i = 0; i < ArraySize(prefixes); i++)
+    {
+        if(ObjectFind(chartId, prefixes[i]) >= 0)
+            ObjectDelete(chartId, prefixes[i]);
+    }
+    ChartRedraw(chartId);
+}
+
 //+------------------------------------------------------------------+
 //| Custom indicator deinitialization function (OnDeinit)            |
 //+------------------------------------------------------------------+
@@ -170,11 +330,10 @@ void OnDeinit(const int reason)
         default:                 reasonText = "Unknown reason"; break;
     }
 
-    Print(StringFormat("Dashboard Indicator deinitialized: %s", reasonText));
+    // Clean up all ChartObject labels created by RenderDashboard()
+    CleanupDashboardObjects();
 
-    // Optional: Clean up ChartObjects (if any were created)
-    // NOTE: Plan 03 handles ChartObject cleanup
-    // For now, just log the deinitialization
+    Print(StringFormat("Dashboard Indicator deinitialized: %s", reasonText));
 }
 
 //+------------------------------------------------------------------+
