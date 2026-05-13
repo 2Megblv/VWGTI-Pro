@@ -32,6 +32,8 @@
 #include "Include/Utils.mqh"
 #include "Include/VolumeProfile.mqh"
 #include "Include/RiskManager.mqh"
+#include "Include/SignalDetection.mqh"
+#include "Include/MultiTimeframeContext.mqh"
 
 // ==================== INPUT PARAMETERS ====================
 
@@ -130,11 +132,92 @@ void OnTick()
         // Log current profile (optional, disable for performance)
         LogVolumeProfile();
 
-        // NOTE: Phase 2 Wave 1 entry signal detection will be added here
-        // - Setup 1 & 2 detection functions
-        // - Multi-timeframe context evaluation
-        // - Order placement (CTrade)
-        // - Position tracking updates
+        // ===== PHASE 2 WAVE 1: SIGNAL DETECTION WITH MULTI-TIMEFRAME CONTEXT =====
+
+        // Load/update 15M profile every 15M bar close
+        static datetime lastProfile15MTime = 0;
+        if (iTime(Symbol(), PERIOD_M15, 0) != lastProfile15MTime)
+        {
+            Load15MProfile();
+            lastProfile15MTime = iTime(Symbol(), PERIOD_M15, 0);
+        }
+
+        // Check session filtering: skip all entries during grave hour and pre-Tokyo
+        if (!IsSessionAllowed())
+        {
+            LogAlert("SESSION_BLOCKED", "Grave hour or pre-Tokyo session; entries blocked");
+            return;  // Skip all signal detection during blocked sessions
+        }
+
+        // Determine market context (balanced vs imbalanced)
+        bool balanced = IsBalancedMarket();
+
+        if (balanced)
+        {
+            // SETUP 1: Gap/Reclaim/Confirmation (balanced market mean reversion)
+            Setup1Signal sig1 = DetectSetup1Signal();
+
+            if (sig1.isTriggered)
+            {
+                // Before processing signal, validate 15M direction bias and liquidity
+                if (!Validate15MDirectionBias(sig1.isLong))
+                {
+                    LogAlert("DIRECTION_BIAS_REJECTED", "Setup1 signal rejected: 15M direction bias does not support entry");
+                    return;
+                }
+
+                if (!ValidateLiquidity())
+                {
+                    LogAlert("LIQUIDITY_REJECTED", "Setup1 signal rejected: spread too wide or volume too low");
+                    return;
+                }
+
+                // Log Setup 1 signal detection (Wave 2 will implement order placement)
+                LogAlert("SETUP1_SIGNAL_DETECTED",
+                    StringFormat("direction=%s entry=%.5f sweepLow=%.5f",
+                        sig1.isLong ? "LONG" : "SHORT",
+                        sig1.confirmationClose,
+                        sig1.sweepLow));
+
+                // NOTE: Wave 2 will add order placement logic here
+                // - Calculate position size, SL, TP
+                // - Place market order via CTrade
+                // - Track position in positions[] array
+            }
+        }
+        else
+        {
+            // SETUP 2: LVN/HVN/Pattern/Volume (imbalanced market momentum)
+            Setup2Signal sig2 = DetectSetup2Signal();
+
+            if (sig2.isTriggered)
+            {
+                // Before processing signal, validate 15M direction bias and liquidity
+                if (!Validate15MDirectionBias(sig2.isLong))
+                {
+                    LogAlert("DIRECTION_BIAS_REJECTED", "Setup2 signal rejected: 15M direction bias does not support entry");
+                    return;
+                }
+
+                if (!ValidateLiquidity())
+                {
+                    LogAlert("LIQUIDITY_REJECTED", "Setup2 signal rejected: spread too wide or volume too low");
+                    return;
+                }
+
+                // Log Setup 2 signal detection (Wave 2 will implement order placement)
+                LogAlert("SETUP2_SIGNAL_DETECTED",
+                    StringFormat("direction=%s hvnEdge=%.5f sweepLow=%.5f",
+                        sig2.isLong ? "LONG" : "SHORT",
+                        sig2.hvnEdgePrice,
+                        sig2.sweepLow));
+
+                // NOTE: Wave 2 will add order placement logic here
+                // - Calculate position size, SL, TP
+                // - Place market order via CTrade
+                // - Track position in positions[] array
+            }
+        }
     }
 }
 
