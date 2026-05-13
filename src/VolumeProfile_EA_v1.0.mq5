@@ -163,6 +163,11 @@ struct VolumeProfile {
     VolumeNode lvnArray[50];            // Low Volume Node array
 };
 
+// ==================== GLOBAL PROFILE VARIABLES (DECLARED EARLY FOR SCOPE) ====================
+
+VolumeProfile     currentProfile;               // Current session profile
+VolumeProfile     previousSessionProfile;       // Previous session profile (for comparison)
+
 //+------------------------------------------------------------------+
 //| Calculate 400-bin volume distribution (REQ-001, REQ-008)         |
 //| Implementation per D-01: Proportional-to-range proration         |
@@ -1924,9 +1929,7 @@ input double Fixed_Lot_Size       = 0.1;      // Used when Use_Risk_Percentage =
 input double Risk_Percentage      = 0.6;      // Risk percentage per trade (0.6%)
 
 // ==================== GLOBAL VARIABLES ====================
-
-VolumeProfile     currentProfile;               // Current session profile
-VolumeProfile     previousSessionProfile;       // Previous session profile (for comparison)
+// Note: currentProfile and previousSessionProfile declared early in file for scope
 // Note: DailyLimitState dailyLimits declared in RiskLimits.mqh
 // Note: PositionState and positions[] declared in TradeExecution.mqh
 // Note: CTrade trade instance declared in TradeExecution.mqh
