@@ -1016,7 +1016,8 @@ OrderResult PlaceMarketOrder(ENUM_ORDER_TYPE orderType, double lots,
     for (int attempt = 0; attempt < RETRY_ATTEMPTS; attempt++)
     {
         // Prepare trade request - correct MT5 API
-        MqlTradeRequest request = {0};
+        MqlTradeRequest request;
+        ZeroMemory(request);
         request.action = TRADE_ACTION_DEAL;
         request.symbol = Symbol();
         request.volume = lots;
@@ -1051,7 +1052,7 @@ OrderResult PlaceMarketOrder(ENUM_ORDER_TYPE orderType, double lots,
         // Order executed successfully; get fill price from trade result
         if (tradeResult.retcode == TRADE_RETCODE_DONE || tradeResult.retcode == TRADE_RETCODE_PLACED)
         {
-            result.ticket = tradeResult.order;
+            result.ticket = (long)tradeResult.order;
             result.fillPrice = tradeResult.price;
 
             // D-07: Validate slippage (50-pip tolerance)
