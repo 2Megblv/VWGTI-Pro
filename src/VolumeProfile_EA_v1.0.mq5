@@ -1257,7 +1257,7 @@ void ClosePosition(long ticket, double exitPrice, string exitReason, double clos
         return;
     }
 
-    PositionState &pos = positions[idx];
+    PositionState pos = positions[idx];
 
     // Calculate P&L for this trade
     double pnlPips = (exitPrice - pos.entryPrice) / Point();
@@ -1265,7 +1265,7 @@ void ClosePosition(long ticket, double exitPrice, string exitReason, double clos
         pnlPips = (pos.entryPrice - exitPrice) / Point();  // SHORT P&L inverted
 
     // Close position via CTrade
-    if (!PositionSelect(ticket))
+    if (!PositionSelectByTicket(ticket))
     {
         LogError(StringFormat("Failed to select position ticket=%ld", ticket));
         return;
@@ -1432,7 +1432,7 @@ bool EnforceDailyLimits()
     for (int i = positionCount - 1; i >= 0; i--)
     {
       // Use CTrade to close
-      if (PositionSelect(positions[i].ticket))
+      if (PositionSelectByTicket(positions[i].ticket))
       {
         trade.PositionClose(positions[i].ticket);
       }
@@ -1461,7 +1461,7 @@ bool EnforceDailyLimits()
 
     for (int i = 0; i < closeCount && i < positionCount; i++)
     {
-      if (PositionSelect(positions[i].ticket))
+      if (PositionSelectByTicket(positions[i].ticket))
       {
         trade.PositionClose(positions[i].ticket);
       }
@@ -1480,7 +1480,7 @@ bool EnforceDailyLimits()
         newSL -= 5 * Point();  // -5 pips for SHORT
 
       // Update position SL via CTrade
-      if (PositionSelect(positions[i].ticket))
+      if (PositionSelectByTicket(positions[i].ticket))
       {
         if (trade.PositionModify(positions[i].ticket, newSL, positions[i].takeProfit))
         {
@@ -1532,7 +1532,7 @@ bool CheckFridayHardClose()
     // Close all positions
     for (int i = positionCount - 1; i >= 0; i--)
     {
-      if (PositionSelect(positions[i].ticket))
+      if (PositionSelectByTicket(positions[i].ticket))
       {
         trade.PositionClose(positions[i].ticket);
       }
@@ -1816,7 +1816,7 @@ bool ExecutePositionFlip(long oldTicket, bool newLongEntry, double newEntryPrice
   }
 
   // Select and close position via CTrade
-  if (!PositionSelect(oldTicket))
+  if (!PositionSelectByTicket(oldTicket))
   {
     LogError(StringFormat("Failed to select position %lld for flip.", oldTicket));
     return false;
