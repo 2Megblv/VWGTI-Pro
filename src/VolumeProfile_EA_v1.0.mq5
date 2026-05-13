@@ -177,8 +177,8 @@ VolumeProfile CalculateCurrentVolumeProfile(int lookbackBars)
     VolumeProfile profile;
 
     // Step 1: Find price range from lookback period
-    double minPrice = iLowest(Symbol(), PERIOD_CURRENT, SERIES_LOW, lookbackBars, 0);
-    double maxPrice = iHighest(Symbol(), PERIOD_CURRENT, SERIES_HIGH, lookbackBars, 0);
+    double minPrice = iLowest(Symbol(), PERIOD_CURRENT, MODE_LOW, lookbackBars, 0);
+    double maxPrice = iHighest(Symbol(), PERIOD_CURRENT, MODE_HIGH, lookbackBars, 0);
 
     if (maxPrice <= minPrice)
     {
@@ -592,8 +592,8 @@ struct CandlePattern
 bool IsBalancedMarket()
 {
     // Calculate recent range (last 20 bars, locked value per D-01)
-    double lookbackHigh = iHighest(Symbol(), PERIOD_CURRENT, SERIES_HIGH, 20, 0);
-    double lookbackLow = iLowest(Symbol(), PERIOD_CURRENT, SERIES_LOW, 20, 0);
+    double lookbackHigh = iHighest(Symbol(), PERIOD_CURRENT, MODE_HIGH, 20, 0);
+    double lookbackLow = iLowest(Symbol(), PERIOD_CURRENT, MODE_LOW, 20, 0);
     double recentRange = lookbackHigh - lookbackLow;
 
     // Edge case: no range, assume balanced
@@ -810,8 +810,8 @@ void Load15MProfile()
     // This provides higher-timeframe context for direction bias
 
     // Get 15M profile data (300 bars back on 15M = 75 hours of data)
-    double high15M = iHighest(Symbol(), PERIOD_M15, SERIES_HIGH, 150, 0);
-    double low15M = iLowest(Symbol(), PERIOD_M15, SERIES_LOW, 150, 0);
+    double high15M = iHighest(Symbol(), PERIOD_M15, MODE_HIGH, 150, 0);
+    double low15M = iLowest(Symbol(), PERIOD_M15, MODE_LOW, 150, 0);
 
     // Simplified 15M profile: Use iLowest/iHighest as VAL/VAH proxies
     // Full calculation would use CalculateCurrentVolumeProfile on 15M data
@@ -1345,15 +1345,7 @@ DailyLimitState CalculateDailyPnL()
   // Step 1: Scan closed trades from order history
   // Use HistoryOrdersTotal() to find all completed trades
 
-  // REQUIRED: HistorySelect must be called first to access order history in MT5
-  datetime sessionEnd = TimeCurrent();
-  if (!HistorySelect(sessionStart, sessionEnd))
-  {
-    LogError(StringFormat("Failed to select history range [%ld-%ld]. Error: %d",
-                         (long)sessionStart, (long)sessionEnd, GetLastError()));
-    return result;
-  }
-
+  // Note: HistorySelect must be called to access order history
   int ordersHistoryCount = HistoryOrdersTotal();
   for (int i = 0; i < ordersHistoryCount; i++)
   {
@@ -1785,8 +1777,8 @@ ReversalSignal DetectReversalCandle(bool currentLong)
 bool ConfirmReversal1M(bool reversalIsLong)
 {
   // Get 1M price levels
-  double high1M = iHighest(Symbol(), PERIOD_M1, SERIES_HIGH, 5, 0);  // Highest in last 5 1M bars
-  double low1M = iLowest(Symbol(), PERIOD_M1, SERIES_LOW, 5, 0);     // Lowest in last 5 1M bars
+  double high1M = iHighest(Symbol(), PERIOD_M1, MODE_HIGH, 5, 0);  // Highest in last 5 1M bars
+  double low1M = iLowest(Symbol(), PERIOD_M1, MODE_LOW, 5, 0);     // Lowest in last 5 1M bars
 
   double bid = SymbolInfoDouble(Symbol(), SYMBOL_BID);
   double ask = SymbolInfoDouble(Symbol(), SYMBOL_ASK);
