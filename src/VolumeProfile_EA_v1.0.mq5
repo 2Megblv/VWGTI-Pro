@@ -74,10 +74,6 @@ bool IsConnected()
         return false;
     }
 
-    LogAlert("INFO", "Connected to broker, symbol=" + Symbol() +
-             " tick_value=" + DoubleToString(tickValue, 8) +
-             " tick_size=" + DoubleToString(tickSize, 8));
-
     return true;
 }
 
@@ -176,8 +172,11 @@ VolumeProfile CalculateCurrentVolumeProfile(int lookbackBars)
     VolumeProfile profile;
 
     // Step 1: Find price range from lookback period
-    double minPrice = iLowest(Symbol(), PERIOD_CURRENT, MODE_LOW, lookbackBars, 0);
-    double maxPrice = iHighest(Symbol(), PERIOD_CURRENT, MODE_HIGH, lookbackBars, 0);
+    // iLowest/iHighest return bar INDICES, not prices — must look up price separately
+    int lowestBarIdx  = iLowest(Symbol(), PERIOD_CURRENT, MODE_LOW,  lookbackBars, 0);
+    int highestBarIdx = iHighest(Symbol(), PERIOD_CURRENT, MODE_HIGH, lookbackBars, 0);
+    double minPrice = iLow(Symbol(),  PERIOD_CURRENT, lowestBarIdx);
+    double maxPrice = iHigh(Symbol(), PERIOD_CURRENT, highestBarIdx);
 
     if (maxPrice <= minPrice)
     {
@@ -213,17 +212,22 @@ VolumeProfile CalculateCurrentVolumeProfile(int lookbackBars)
         // Multi-level candle: distribute volume proportionally across price range
         if (range > binSize)
         {
-            // Calculate how many bins this candle spans
-            int numBins = (int)(range / binSize) + 1;
-            if (numBins > VOLUME_BINS)
-                numBins = VOLUME_BINS;  // Safety cap
+            // Calculate bin indices for low and high
+            int lowBinIdx = (int)((low - minPrice) / binSize);
+            int highBinIdx = (int)((high - minPrice) / binSize);
+
+            // Clamp to valid range
+            if (lowBinIdx < 0) lowBinIdx = 0;
+            if (highBinIdx >= VOLUME_BINS) highBinIdx = VOLUME_BINS - 1;
+
+            int numBins = highBinIdx - lowBinIdx + 1;
+            if (numBins <= 0) numBins = 1;
 
             double volumePerBin = (double)volume / numBins;
 
-            // Iterate from low to high in bin steps
-            for (double price = low; price <= high && price <= maxPrice; price += binSize)
+            // Iterate using integer indices (avoids floating-point precision errors)
+            for (int binIdx = lowBinIdx; binIdx <= highBinIdx; binIdx++)
             {
-                int binIdx = (int)((price - minPrice) / binSize);
                 if (binIdx >= 0 && binIdx < VOLUME_BINS)
                 {
                     profile.volumeArray[binIdx] += volumePerBin;
@@ -480,32 +484,35 @@ double CalculateLotSize(double entryPrice, double stopLossPrice)
         return 0;
     }
 
-    // Step 2: Calculate SL distance in pips (broker's point units)
-    double slDistancePoints = MathAbs(entryPrice - stopLossPrice) / Point();
+    // Step 2: Calculate SL distance in ticks
+    double tickSize = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_SIZE);
+    if (tickSize <= 0)
+    {
+        Print("ERROR: Invalid tick size for symbol ", Symbol());
+        return 0;
+    }
+    double slDistanceTicks = MathAbs(entryPrice - stopLossPrice) / tickSize;
 
-    if (slDistancePoints <= 0)
+    if (slDistanceTicks <= 0)
     {
         Print("ERROR: Invalid SL distance for lot sizing");
         return 0;
     }
 
-    // Step 3: Fetch pip value for this symbol
-    // CRITICAL: Use SymbolInfoDouble() to get broker-specific pip value
-    // DO NOT hardcode; brokers differ on XAUUSD tick value
-
+    // Step 3: Fetch tick value (account currency per tick per lot)
+    // CRITICAL: Use SymbolInfoDouble() — brokers differ on XAUUSD tick value
     double tickValue = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_VALUE);
-    double tickSize = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_SIZE);
 
-    if (tickValue <= 0 || tickSize <= 0)
+    if (tickValue <= 0)
     {
-        Print("ERROR: Invalid tick value/size for symbol ", Symbol());
+        Print("ERROR: Invalid tick value for symbol ", Symbol());
         return 0;
     }
 
-    double pipValue = tickValue / tickSize;
-
     // Step 4: Calculate lot size
-    double lotSize = riskAmount / (slDistancePoints * pipValue);
+    // Formula: lots = riskAmount / (slDistanceTicks * tickValue)
+    // slDistanceTicks is in ticks, tickValue is $/lot/tick — units are consistent
+    double lotSize = riskAmount / (slDistanceTicks * tickValue);
 
     if (lotSize <= 0)
     {
@@ -527,7 +534,7 @@ double CalculateLotSize(double entryPrice, double stopLossPrice)
     // Validate minimum lot
     if (lotSize < minLot)
     {
-        Print("WARNING: Calculated lot size ", lotSize, " < minimum ", minLot,
+        Print("WARNING: Calculated lot size ", StringFormat("%.2f", lotSize), " < minimum ", StringFormat("%.2f", minLot),
               "; rejecting trade");
         return 0;  // Reject trade; too small
     }
@@ -535,7 +542,7 @@ double CalculateLotSize(double entryPrice, double stopLossPrice)
     // Cap at maximum lot (if position would be too large)
     if (lotSize > maxLot)
     {
-        Print("WARNING: Calculated lot size ", lotSize, " > maximum ", maxLot,
+        Print("WARNING: Calculated lot size ", StringFormat("%.2f", lotSize), " > maximum ", StringFormat("%.2f", maxLot),
               "; capping at max");
         lotSize = maxLot;
     }
@@ -591,8 +598,10 @@ struct CandlePattern
 bool IsBalancedMarket()
 {
     // Calculate recent range (last 20 bars, locked value per D-01)
-    double lookbackHigh = iHighest(Symbol(), PERIOD_CURRENT, MODE_HIGH, 20, 0);
-    double lookbackLow = iLowest(Symbol(), PERIOD_CURRENT, MODE_LOW, 20, 0);
+    int highIdx = iHighest(Symbol(), PERIOD_CURRENT, MODE_HIGH, 20, 0);
+    int lowIdx  = iLowest(Symbol(), PERIOD_CURRENT, MODE_LOW,  20, 0);
+    double lookbackHigh = iHigh(Symbol(), PERIOD_CURRENT, highIdx);
+    double lookbackLow  = iLow(Symbol(),  PERIOD_CURRENT, lowIdx);
     double recentRange = lookbackHigh - lookbackLow;
 
     // Edge case: no range, assume balanced
@@ -809,8 +818,10 @@ void Load15MProfile()
     // This provides higher-timeframe context for direction bias
 
     // Get 15M profile data (300 bars back on 15M = 75 hours of data)
-    double high15M = iHighest(Symbol(), PERIOD_M15, MODE_HIGH, 150, 0);
-    double low15M = iLowest(Symbol(), PERIOD_M15, MODE_LOW, 150, 0);
+    int high15MIdx = iHighest(Symbol(), PERIOD_M15, MODE_HIGH, 150, 0);
+    int low15MIdx  = iLowest(Symbol(),  PERIOD_M15, MODE_LOW,  150, 0);
+    double high15M = iHigh(Symbol(), PERIOD_M15, high15MIdx);
+    double low15M  = iLow(Symbol(),  PERIOD_M15, low15MIdx);
 
     // Simplified 15M profile: Use iLowest/iHighest as VAL/VAH proxies
     // Full calculation would use CalculateCurrentVolumeProfile on 15M data
@@ -862,12 +873,12 @@ bool Validate15MDirectionBias(bool isLongEntry)
     if (isLongEntry)
     {
         // LONG: require at least 50 pips above 15M VAL (conservative buffer)
-        return (mid > profile15M.valPrice + 50 * Point());
+        return (mid > profile15M.valPrice + 50 * g_pipSize);
     }
     else
     {
         // SHORT: require at least 50 pips below 15M VAH (conservative buffer)
-        return (mid < profile15M.vahPrice - 50 * Point());
+        return (mid < profile15M.vahPrice - 50 * g_pipSize);
     }
 }
 
@@ -935,15 +946,8 @@ bool ValidateLiquidity()
     double tickSize = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_SIZE);
     double spreadPips = spread / tickSize;
 
-    // Symbol-specific spread threshold
-    double spreadLimit = 5.0;  // Default 5 pips (EURUSD)
-
-    if (StringFind(Symbol(), "XAUUSD") >= 0)
-    {
-        spreadLimit = 3.0;  // Gold: 3 pips limit
-    }
-
-    if (spreadPips > spreadLimit)
+    // Use parameterized spread limit from input (configurable per asset)
+    if (spreadPips > Max_Spread_Pips)
     {
         return false;  // Spread too wide; reject
     }
@@ -1786,14 +1790,12 @@ bool ConfirmReversal1M(bool reversalIsLong)
   if (reversalIsLong)
   {
     // LONG reversal: price must break above 1M recent high + 10 pips buffer
-    // Using ask price for entry perspective
-    return (ask > high1M + 10 * Point());
+    return (ask > high1M + 10 * g_pipSize);
   }
   else
   {
     // SHORT reversal: price must break below 1M recent low - 10 pips buffer
-    // Using bid price for entry perspective
-    return (bid < low1M - 10 * Point());
+    return (bid < low1M - 10 * g_pipSize);
   }
 }
 
@@ -1932,7 +1934,17 @@ input bool   Use_Risk_Percentage  = true;     // Use risk percentage or fixed lo
 input double Fixed_Lot_Size       = 0.1;      // Used when Use_Risk_Percentage = false
 input double Risk_Percentage      = 0.6;      // Risk percentage per trade (0.6%)
 
+// ==================== ASSET-SPECIFIC CONFIGURATION ====================
+input string Asset_Class          = "XAUUSD"; // Trading asset (e.g., XAUUSD, EURUSD, GBPUSD)
+input double Max_Spread_Pips      = 5.0;      // Maximum allowed spread for the asset (in pips)
+
 // ==================== GLOBAL VARIABLES ====================
+
+// Pip size calculated at OnInit — auto-detects 5-decimal FX vs Gold/Indices
+// EURUSD (5-digit): pipSize = 10 * Point() = 0.0001
+// XAUUSD (2-digit): pipSize = 1 * Point() = 0.01
+// US30   (1-digit): pipSize = 1 * Point() = 1.0
+double g_pipSize = 0.0001;
 // Note: currentProfile and previousSessionProfile declared early in file for scope
 // Note: DailyLimitState dailyLimits declared in RiskLimits.mqh
 // Note: PositionState and positions[] declared in TradeExecution.mqh
@@ -1963,16 +1975,18 @@ int OnInit()
     if (!IsConnected())
         return INIT_FAILED;
 
+    // Auto-detect pip size based on symbol decimal precision (REQ-037)
+    // 5-digit FX (EURUSD) and 3-digit JPY pairs use 10 * Point() as 1 pip
+    int digits = (int)SymbolInfoInteger(Symbol(), SYMBOL_DIGITS);
+    g_pipSize = ((digits == 5 || digits == 3) ? 10.0 : 1.0) * Point();
+    LogAlert("INIT", StringFormat("Symbol=%s Digits=%d PipSize=%.5f", Symbol(), digits, g_pipSize));
+
     // Initialize CTrade for order placement (Wave 2)
     trade.SetExpertMagicNumber(EA_MAGIC_NUMBER);
     LogAlert("TRADE_INIT", "CTrade initialized with magic number " + IntegerToString(EA_MAGIC_NUMBER));
 
-    Print("\n===== RUNNING UNIT TESTS =====\n");
-
-    // Run embedded unit tests
-    RunAllTests();
-
-    Print("\n===== EA INITIALIZED SUCCESSFULLY =====\n");
+    // Unit tests deferred to first tick (historical data not available during OnInit)
+    Print("\n===== EA INITIALIZED - Tests will run on first tick =====\n");
 
     return INIT_SUCCEEDED;
 }
@@ -1987,6 +2001,62 @@ void OnTick()
     {
         LogError("Broker disconnected");
         return;
+    }
+
+    // Heartbeat: update chart comment every 30 ticks
+    static int tickCount = 0;
+    tickCount++;
+    if (tickCount % 30 == 0)
+    {
+        string sessionStatus = IsSessionAllowed() ? "ALLOWED" : "BLOCKED";
+        string limitsStatus  = dailyLimits.hardStopHit    ? "HARD STOP"  :
+                               dailyLimits.profitCapReached ? "PROFIT CAP" : "OK";
+        string posLine = positionCount > 0
+            ? StringFormat("%d open", positionCount)
+            : "none";
+
+        Comment(StringFormat(
+            "VWGTI-Pro v2.0  |  Tick: %d\n"
+            "Bar:  %s\n"
+            "──────────────────────────\n"
+            "POC:  %.5f\n"
+            "VAH:  %.5f\n"
+            "VAL:  %.5f\n"
+            "HVN: %d   LVN: %d\n"
+            "──────────────────────────\n"
+            "Session:  %s\n"
+            "Positions: %s\n"
+            "Daily P&L: %.2f\n"
+            "Limits:   %s\n"
+            "Balance:  %.2f",
+            tickCount,
+            TimeToString(iTime(Symbol(), PERIOD_CURRENT, 0), TIME_DATE|TIME_MINUTES),
+            currentProfile.pocPrice,
+            currentProfile.vahPrice,
+            currentProfile.valPrice,
+            currentProfile.hvnCount,
+            currentProfile.lvnCount,
+            sessionStatus,
+            posLine,
+            dailyLimits.totalPnL,
+            limitsStatus,
+            AccountInfoDouble(ACCOUNT_BALANCE)
+        ));
+    }
+
+    // Run unit tests once on first tick (historical data now loaded)
+    static bool testsRun = false;
+    if (!testsRun)
+    {
+        // Pre-calculate profile so POC/VAH/VAL tests have data to validate
+        currentProfile = CalculateCurrentVolumeProfile(LOOKBACK_BARS);
+        CalculateValueArea(currentProfile);
+        IdentifyVolumeNodes(currentProfile, HVN_PERCENTILE, LVN_PERCENTILE);
+
+        Print("\n===== RUNNING UNIT TESTS =====\n");
+        RunAllTests();
+        testsRun = true;
+        Print("\n===== EA INITIALIZED SUCCESSFULLY =====\n");
     }
 
     // EVERY TICK: Monitor existing positions for exit conditions (Wave 2)
@@ -2080,7 +2150,7 @@ void OnTick()
                 // Wave 2: Order placement on Setup 1 signal
                 // Calculate position details
                 double entryPrice = sig1.confirmationClose;
-                double stopLoss = sig1.sweepLow - (10 * Point());  // 10 pips below sweep low
+                double stopLoss = sig1.sweepLow - (10 * g_pipSize);  // 10 pips below sweep low
                 double takeProfit = sig1.isLong ? currentProfile.vahPrice : currentProfile.valPrice;  // D-03/D-06: opposite edge
 
                 // Calculate lot size
@@ -2364,12 +2434,12 @@ bool TestVolumeValidation()
 
     if (variance <= 0.01)  // ±1% tolerance
     {
-        Print("  PASS: Volume distribution variance = ", variance * 100, "%");
+        Print("  PASS: Volume distribution variance = ", StringFormat("%.2f", variance * 100), "%");
         return true;
     }
     else
     {
-        Print("  FAIL: Volume distribution variance = ", variance * 100, "% > 1%");
+        Print("  FAIL: Volume distribution variance = ", StringFormat("%.2f", variance * 100), "% > 1%");
         return false;
     }
 }
@@ -2392,13 +2462,13 @@ bool TestPOCIdentification()
     if (currentProfile.pocPrice >= currentProfile.minPrice &&
         currentProfile.pocPrice <= currentProfile.maxPrice)
     {
-        Print("  PASS: POC = ", currentProfile.pocPrice,
-              " (range: ", currentProfile.minPrice, " - ", currentProfile.maxPrice, ")");
+        Print("  PASS: POC = ", StringFormat("%.2f", currentProfile.pocPrice),
+              " (range: ", StringFormat("%.2f", currentProfile.minPrice), " - ", StringFormat("%.2f", currentProfile.maxPrice), ")");
         return true;
     }
     else
     {
-        Print("  FAIL: POC = ", currentProfile.pocPrice, " outside range");
+        Print("  FAIL: POC = ", StringFormat("%.2f", currentProfile.pocPrice), " outside range");
         return false;
     }
 }
@@ -2426,14 +2496,14 @@ bool TestValueAreaCalculation()
         // VA should capture ~70% of range (some variance acceptable)
         if (vaPercent > 60 && vaPercent < 80)
         {
-            Print("  PASS: VAH = ", currentProfile.vahPrice,
-                  ", VAL = ", currentProfile.valPrice,
-                  " (width = ", vaPercent, "% of range)");
+            Print("  PASS: VAH = ", StringFormat("%.2f", currentProfile.vahPrice),
+                  ", VAL = ", StringFormat("%.2f", currentProfile.valPrice),
+                  " (width = ", StringFormat("%.2f", vaPercent), "% of range)");
             return true;
         }
         else
         {
-            Print("  WARN: VA width = ", vaPercent, "% (expected ~70%)");
+            Print("  WARN: VA width = ", StringFormat("%.2f", vaPercent), "% (expected ~70%)");
             return true;  // Don't fail; warn for backtest verification
         }
     }
@@ -2488,15 +2558,22 @@ bool TestPositionSizing()
 {
     Print("TEST: Position Sizing Calculation");
 
-    // Test 1: Risk-based sizing
-    double testEntry = 1.2000;
-    double testSL = 1.1950;  // 50 pips
+    // Use live symbol price with a realistic 20-pip stop for the current asset
+    double testEntry = SymbolInfoDouble(Symbol(), SYMBOL_ASK);
+    double testSL    = testEntry - (20 * SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_SIZE) * 100);
 
     double testLot = CalculateLotSize(testEntry, testSL);
 
-    if (testLot > 0)
+    double maxLot = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MAX);
+    if (testLot > 0 && testLot <= maxLot)
     {
-        Print("  PASS: Risk-based lot sizing = ", testLot);
+        Print("  PASS: Risk-based lot sizing = ", StringFormat("%.2f", testLot));
+    }
+    else if (testLot > maxLot)
+    {
+        Print("  FAIL: Lot size ", StringFormat("%.2f", testLot), " exceeds broker max ", StringFormat("%.2f", maxLot),
+              " — check account balance or SL distance");
+        return false;
     }
     else
     {

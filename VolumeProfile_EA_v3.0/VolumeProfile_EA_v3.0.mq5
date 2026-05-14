@@ -403,50 +403,72 @@ Setup1Signal DetectSetup1Signal() {
 }
 
 //+------------------------------------------------------------------+
-//| Setup 2: LVN/HVN/Pattern/Volume
+//| Setup 2: LVN/HVN/Pattern/Volume (Long + Short)
 //+------------------------------------------------------------------+
 Setup2Signal DetectSetup2Signal() {
     Setup2Signal result = {false, false, 0, 0};
-    
+
     if (!Enable_Setup2) return result;
-    
-    double currentLow = iLow(Symbol(), PERIOD_CURRENT, 1);
-    
-    // Find lowest LVN
-    double lowestLVN = 999999;
-    for (int i = 0; i < gVolumeProfile.GetLVNCount(); i++) {
-        double lvnPrice = gVolumeProfile.GetLVNPrice(i);
-        if (lvnPrice < lowestLVN) lowestLVN = lvnPrice;
-    }
-    
-    if (currentLow > lowestLVN) return result;  // No LVN sweep
-    
-    // Find nearest HVN above current price
-    double hvnEdge = 999999;
-    for (int i = 0; i < gVolumeProfile.GetHVNCount(); i++) {
-        double hvnPrice = gVolumeProfile.GetHVNPrice(i);
-        if (hvnPrice > currentLow && hvnPrice < hvnEdge) {
-            hvnEdge = hvnPrice;
-        }
-    }
-    
-    if (hvnEdge == 999999) return result;  // No HVN found
-    
-    // Pattern detection
+
+    // Pattern must be confirmed before sweep check — avoids wasted work
     CandlePattern pattern = DetectCandlePattern();
     if (!pattern.isValid) return result;
-    
-    // Volume spike (≥ 1.3x previous)
+    if (pattern.patternType == CandlePattern::DOJI) return result;  // No directional edge on doji
+
+    bool isLongSetup = (pattern.patternType == CandlePattern::HAMMER);
+
+    // Volume spike (≥ 1.3x previous bar)
     long currentVolume = iVolume(Symbol(), PERIOD_CURRENT, 1);
     long previousVolume = iVolume(Symbol(), PERIOD_CURRENT, 2);
-    
     if (previousVolume <= 0 || currentVolume < previousVolume * 1.3) return result;
-    
-    result.isTriggered = true;
-    result.isLong = (pattern.patternType == CandlePattern::HAMMER);
-    result.hvnEdgePrice = hvnEdge;
-    result.sweepLow = currentLow;
-    
+
+    double currentHigh = iHigh(Symbol(), PERIOD_CURRENT, 1);
+    double currentLow  = iLow(Symbol(), PERIOD_CURRENT, 1);
+
+    if (isLongSetup) {
+        // LONG: bar swept below lowest LVN then closed with a hammer — expect bounce to HVN
+        double lowestLVN = 999999;
+        for (int i = 0; i < gVolumeProfile.GetLVNCount(); i++) {
+            double lvnPrice = gVolumeProfile.GetLVNPrice(i);
+            if (lvnPrice < lowestLVN) lowestLVN = lvnPrice;
+        }
+        if (currentLow > lowestLVN) return result;  // No LVN sweep
+
+        // Entry reference: nearest HVN above sweep low
+        double hvnEdge = 999999;
+        for (int i = 0; i < gVolumeProfile.GetHVNCount(); i++) {
+            double hvnPrice = gVolumeProfile.GetHVNPrice(i);
+            if (hvnPrice > currentLow && hvnPrice < hvnEdge) hvnEdge = hvnPrice;
+        }
+        if (hvnEdge == 999999) return result;
+
+        result.isTriggered = true;
+        result.isLong     = true;
+        result.hvnEdgePrice = hvnEdge;
+        result.sweepLow    = currentLow;  // SL reference: below this
+    } else {
+        // SHORT: bar swept above highest HVN then closed with a shooting star — expect drop to LVN
+        double highestHVN = 0;
+        for (int i = 0; i < gVolumeProfile.GetHVNCount(); i++) {
+            double hvnPrice = gVolumeProfile.GetHVNPrice(i);
+            if (hvnPrice > highestHVN) highestHVN = hvnPrice;
+        }
+        if (highestHVN == 0 || currentHigh < highestHVN) return result;  // No HVN sweep
+
+        // Entry reference: nearest LVN below sweep high (TP target)
+        double lvnEdge = 0;
+        for (int i = 0; i < gVolumeProfile.GetLVNCount(); i++) {
+            double lvnPrice = gVolumeProfile.GetLVNPrice(i);
+            if (lvnPrice < currentHigh && lvnPrice > lvnEdge) lvnEdge = lvnPrice;
+        }
+        if (lvnEdge == 0) return result;
+
+        result.isTriggered = true;
+        result.isLong      = false;
+        result.hvnEdgePrice = lvnEdge;   // TP target for short
+        result.sweepLow    = currentHigh; // SL reference: above this (field repurposed)
+    }
+
     return result;
 }
 
@@ -654,50 +676,77 @@ void OnTick() {
         if (balanced) {
             // SETUP 1: Gap/Reclaim/Confirmation
             Setup1Signal sig1 = DetectSetup1Signal();
-            
+
             if (sig1.isTriggered) {
-                double entryPrice = sig1.confirmationClose;
-                double stopLoss = sig1.sweepLow - (10 * g_pipSize);
+                // Fix 1: use live market price for lot sizing, not bar close
+                double marketPrice = sig1.isLong
+                    ? SymbolInfoDouble(Symbol(), SYMBOL_ASK)
+                    : SymbolInfoDouble(Symbol(), SYMBOL_BID);
+
+                // Fix 2: 100-pip SL buffer (was 10); direction-aware for short
+                double barHigh1 = iHigh(Symbol(), PERIOD_CURRENT, 1);
+                double stopLoss = sig1.isLong
+                    ? sig1.sweepLow - (100 * g_pipSize)
+                    : barHigh1     + (100 * g_pipSize);
+
                 double takeProfit = sig1.isLong ? gVolumeProfile.GetVAH() : gVolumeProfile.GetVAL();
-                
-                double lotSize = CalculateLotSize(entryPrice, stopLoss);
-                
+
+                double lotSize = CalculateLotSize(marketPrice, stopLoss);
+
                 if (lotSize > 0) {
-                    double rr = CalculateRiskRewardRatio(entryPrice, stopLoss, takeProfit);
-                    
-                    OrderExecutor::ExecutionRecord result = gOrderExecutor.PlaceOrder(
-                        sig1.isLong, lotSize, entryPrice, stopLoss, takeProfit, EA_MAGIC_NUMBER);
-                    
-                    if (result.status == OrderExecutor::STATUS_FILLED) {
-                        gPositionManager.RegisterFill(result.ticket, sig1.isLong, result.fillPrice,
-                                                      stopLoss, takeProfit, lotSize, "Setup1");
-                        Print("[ENTRY] Setup1 LONG=", sig1.isLong, " Entry=", result.fillPrice, 
-                              " RR=", rr, ":1");
+                    double rr = CalculateRiskRewardRatio(marketPrice, stopLoss, takeProfit);
+
+                    // Fix 4: R:R gate — minimum 1.5:1 required
+                    if (rr < 1.5) {
+                        Print("[SKIP] Setup1 R:R too low: ", DoubleToString(rr, 2), ":1 (min 1.5)");
+                    } else {
+                        OrderExecutor::ExecutionRecord result = gOrderExecutor.PlaceOrder(
+                            sig1.isLong, lotSize, marketPrice, stopLoss, takeProfit, EA_MAGIC_NUMBER);
+
+                        if (result.status == OrderExecutor::STATUS_FILLED) {
+                            gPositionManager.RegisterFill(result.ticket, sig1.isLong, result.fillPrice,
+                                                          stopLoss, takeProfit, lotSize, "Setup1");
+                            Print("[ENTRY] Setup1 LONG=", sig1.isLong, " Entry=", result.fillPrice,
+                                  " SL=", stopLoss, " TP=", takeProfit, " RR=", DoubleToString(rr, 2), ":1");
+                        }
                     }
                 }
             }
         } else {
             // SETUP 2: LVN/HVN/Pattern/Volume
             Setup2Signal sig2 = DetectSetup2Signal();
-            
+
             if (sig2.isTriggered) {
-                double entryPrice = sig2.hvnEdgePrice;
-                double stopLoss = sig2.sweepLow - (10 * g_pipSize);
+                // Fix 1: use live market price for lot sizing
+                double marketPrice = sig2.isLong
+                    ? SymbolInfoDouble(Symbol(), SYMBOL_ASK)
+                    : SymbolInfoDouble(Symbol(), SYMBOL_BID);
+
+                // Fix 2: 100-pip SL buffer; direction-aware (sweepLow = sweep high for shorts)
+                double stopLoss = sig2.isLong
+                    ? sig2.sweepLow - (100 * g_pipSize)
+                    : sig2.sweepLow + (100 * g_pipSize);
+
                 double takeProfit = sig2.isLong ? gVolumeProfile.GetVAH() : gVolumeProfile.GetVAL();
-                
-                double lotSize = CalculateLotSize(entryPrice, stopLoss);
-                
+
+                double lotSize = CalculateLotSize(marketPrice, stopLoss);
+
                 if (lotSize > 0) {
-                    double rr = CalculateRiskRewardRatio(entryPrice, stopLoss, takeProfit);
-                    
-                    OrderExecutor::ExecutionRecord result = gOrderExecutor.PlaceOrder(
-                        sig2.isLong, lotSize, entryPrice, stopLoss, takeProfit, EA_MAGIC_NUMBER);
-                    
-                    if (result.status == OrderExecutor::STATUS_FILLED) {
-                        gPositionManager.RegisterFill(result.ticket, sig2.isLong, result.fillPrice,
-                                                      stopLoss, takeProfit, lotSize, "Setup2");
-                        Print("[ENTRY] Setup2 LONG=", sig2.isLong, " Entry=", result.fillPrice, 
-                              " RR=", rr, ":1");
+                    double rr = CalculateRiskRewardRatio(marketPrice, stopLoss, takeProfit);
+
+                    // Fix 4: R:R gate — minimum 1.5:1 required
+                    if (rr < 1.5) {
+                        Print("[SKIP] Setup2 R:R too low: ", DoubleToString(rr, 2), ":1 (min 1.5)");
+                    } else {
+                        OrderExecutor::ExecutionRecord result = gOrderExecutor.PlaceOrder(
+                            sig2.isLong, lotSize, marketPrice, stopLoss, takeProfit, EA_MAGIC_NUMBER);
+
+                        if (result.status == OrderExecutor::STATUS_FILLED) {
+                            gPositionManager.RegisterFill(result.ticket, sig2.isLong, result.fillPrice,
+                                                          stopLoss, takeProfit, lotSize, "Setup2");
+                            Print("[ENTRY] Setup2 LONG=", sig2.isLong, " Entry=", result.fillPrice,
+                                  " SL=", stopLoss, " TP=", takeProfit, " RR=", DoubleToString(rr, 2), ":1");
+                        }
                     }
                 }
             }
